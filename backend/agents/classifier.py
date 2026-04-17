@@ -8,7 +8,6 @@ handles high-confidence cases; the LLM is invoked only for ambiguous ones.
 
 import json
 import os
-import random
 
 from dotenv import load_dotenv
 from dotenv import load_dotenv
@@ -156,6 +155,34 @@ _LOW_TONE_WORDS: list[str] = [
     "cosmetic",
     "negligible",
 ]
+_TRIVIAL_KEYWORDS: list[str] = [
+    "tilted dustbin",
+    "fallen dustbin",
+    "dustbin tilted",
+    "dustbin fallen",
+    "minor pothole",
+    "small pothole",
+    "tilted bin",
+    "fallen bin",
+]
+_MODERATE_KEYWORDS: list[str] = [
+    "overflowing bin",
+    "overflowing bins",
+    "street light",
+    "streetlight",
+    "water leakage",
+    "blocked drain",
+]
+_SERIOUS_KEYWORDS: list[str] = [
+    "accident",
+    "injury",
+    "health hazard",
+    "hazard",
+    "traffic jam",
+    "traffic risk",
+    "fire",
+    "electrocution",
+]
 
 # LLM prompt — kept as a module-level constant so it is built once
 _PROMPT_TEMPLATE: str = (
@@ -170,6 +197,8 @@ _PROMPT_TEMPLATE: str = (
     "- Use ONLY the allowed values listed above\n"
     "- If description contains: accident, injury, collapse, fire, danger,\n"
     "  child, hospital, hazard → priority MUST be High\n"
+    "- A fallen or tilted dustbin is Low priority\n"
+    "- Only mark High if there is a direct safety, health, or traffic risk\n"
     "- reason must reference actual words from the description\n"
     "- Return valid JSON only, no extra text"
 )
@@ -205,6 +234,12 @@ def _find_matched_keyword(description_lower: str, category: str) -> str:
 def _derive_priority(description_lower: str) -> str:
     """Derive priority from severity and tone keywords; never raises."""
     try:
+        if any(kw in description_lower for kw in _TRIVIAL_KEYWORDS):
+            return "Low"
+        if any(kw in description_lower for kw in _SERIOUS_KEYWORDS):
+            return "High"
+        if any(kw in description_lower for kw in _MODERATE_KEYWORDS):
+            return "Medium"
         if any(kw in description_lower for kw in SEVERITY_KEYWORDS):
             return "High"
         if any(kw in description_lower for kw in _HIGH_TONE_WORDS):

@@ -89,8 +89,6 @@
     .high { background: var(--danger); }
     .medium { background: var(--warn); color: #1d1200; }
     .low { background: var(--good); }
-    .sla-ok { background: var(--info); }
-    .sla-breached { background: var(--danger); }
     .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
     input, select, textarea {
       width: 100%; background: var(--surface-soft); color: var(--text);
@@ -115,6 +113,46 @@
     .modal { width: min(760px, 92vw); max-height: 88vh; overflow-y: auto; }
     .row { display: grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap: 12px; }
     .warn-banner { background: rgba(227,93,93,0.18); border: 1px solid var(--danger); padding: 10px; border-radius: 10px; margin: 10px 0; }
+    .pattern-banner { border-radius: 10px; padding: 12px; margin-bottom: 12px; border: 1px solid transparent; }
+    .pattern-emergency { background: rgba(227, 93, 93, 0.2); border-color: #e35d5d; }
+    .pattern-locality { background: rgba(233, 180, 76, 0.2); border-color: #e9b44c; color: #f2e6cd; }
+    .pattern-citywide { background: rgba(148, 108, 255, 0.22); border-color: #946cff; }
+    .chat-widget { position: fixed; bottom: 20px; right: 20px; z-index: 4000; font-family: inherit; }
+    .chat-fab {
+      width: 56px; height: 56px; border-radius: 50%; border: none;
+      background: var(--primary); color: #fff; font-size: 1.35rem; cursor: pointer;
+      box-shadow: var(--shadow); display: grid; place-items: center;
+    }
+    .chat-panel {
+      position: absolute; bottom: 72px; right: 0; width: min(400px, calc(100vw - 32px));
+      max-height: min(560px, calc(100vh - 120px)); display: flex; flex-direction: column;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      box-shadow: var(--shadow); opacity: 0; pointer-events: none;
+      transform: translateY(16px) scale(0.96); transition: opacity 0.28s ease, transform 0.28s ease;
+    }
+    .chat-panel.open { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
+    .chat-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 14px; border-bottom: 1px solid var(--border); font-weight: 600;
+    }
+    .chat-close { background: none; border: none; color: var(--muted); font-size: 1.5rem; line-height: 1; cursor: pointer; padding: 4px 8px; }
+    .chat-messages {
+      flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px;
+      min-height: 200px; max-height: min(360px, 42vh);
+    }
+    .msg { max-width: 90%; padding: 10px 12px; border-radius: 14px; font-size: 0.92rem; line-height: 1.45; word-break: break-word; }
+    .msg.bot { align-self: flex-start; background: var(--surface-soft); border: 1px solid var(--border); }
+    .msg.user { align-self: flex-end; background: var(--primary); color: #fff; }
+    .chat-typing { padding: 4px 12px 8px; min-height: 24px; }
+    .typing-dots { display: inline-flex; gap: 4px; padding: 8px 12px; background: var(--surface-soft); border-radius: 12px; border: 1px solid var(--border); }
+    .typing-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: chatDot 1.1s ease-in-out infinite; }
+    .typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes chatDot { 0%, 100% { opacity: 0.35; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1); } }
+    .chat-actions { padding: 0 12px 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .chat-actions .btn { padding: 8px 12px; font-size: 0.85rem; }
+    .chat-input-row { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); align-items: center; }
+    .chat-input-row input { flex: 1; margin: 0; }
     .hamburger { display: none; }
     @media (max-width: 880px) {
       .hamburger { display: block; }
@@ -122,6 +160,8 @@
       .sidebar.open { left: 0; }
       .main { padding: 16px; }
       .controls input, .controls select { width: 100%; }
+      .chat-widget { bottom: 16px; right: 16px; }
+      .chat-panel { right: 0; left: auto; width: calc(100vw - 32px); max-width: 400px; }
     }
   </style>
 </head>
@@ -148,6 +188,10 @@
       </div>
 
       <section id="dashboard" class="section">
+        <div id="patternAlertWrap"></div>
+        <div class="controls">
+          <select id="dashboardLocalityFilter"><option value="">All Localities</option></select>
+        </div>
         <div id="kpiGrid" class="grid kpis"></div>
         <div class="grid" style="grid-template-columns: repeat(auto-fit,minmax(320px,1fr)); margin-top: 16px;">
           <div class="card"><canvas id="categoryChart" height="230"></canvas></div>
@@ -164,7 +208,6 @@
           <input id="searchInput" placeholder="Search description or location" />
           <select id="categoryFilter"><option value="">All Categories</option></select>
           <select id="priorityFilter"><option value="">All Priorities</option><option>High</option><option>Medium</option><option>Low</option></select>
-          <select id="slaFilter"><option value="">All SLA</option><option value="breached">Breached</option><option value="ontime">On Time</option></select>
           <select id="boostFilter"><option value="">All Boost</option><option value="boosted">Priority Boosted</option><option value="not_boosted">Not Boosted</option></select>
         </div>
         <div class="card">
@@ -193,6 +236,25 @@
     </main>
   </div>
 
+  <div class="chat-widget" id="chatWidgetRoot">
+    <button type="button" class="chat-fab" id="chatFab" aria-label="Open complaint chat">💬</button>
+    <div class="chat-panel" id="chatPanel" aria-hidden="true">
+      <div class="chat-header">
+        <span>Report an issue</span>
+        <button type="button" class="chat-close" id="chatClose" aria-label="Close chat">&times;</button>
+      </div>
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-typing" id="chatTyping" hidden>
+        <span class="typing-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+      </div>
+      <div class="chat-actions" id="chatQuickActions"></div>
+      <div class="chat-input-row">
+        <input type="text" id="chatInput" placeholder="Type a message..." autocomplete="off" />
+        <button type="button" class="btn" id="chatSend">Send</button>
+      </div>
+    </div>
+  </div>
+
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
@@ -212,10 +274,18 @@
     const app = initializeApp(firebaseConfig);
     const fdb = getFirestore(app);
 
-    const state = { complaints: [], map: null, markers: [], categoryChart: null, priorityChart: null };
+    const state = {
+      complaints: [],
+      map: null,
+      markers: [],
+      categoryChart: null,
+      priorityChart: null,
+      dashboardLocality: "",
+      hydCenters: []
+    };
 
     const kpis = [
-      ["Total", "total"], ["SLA Breached", "slaBreached"], ["High Priority", "highPriority"],
+      ["Total", "total"], ["High Priority", "highPriority"],
       ["Resolved", "resolved"], ["Flagged Locations", "flaggedLocations"], ["Priority Boosted", "priorityBoosted"]
     ];
 
@@ -226,6 +296,290 @@
       div.textContent = msg;
       wrap.appendChild(div);
       setTimeout(() => div.remove(), 3000);
+    }
+
+    function escapeHtml(str) {
+      const el = document.createElement("div");
+      el.textContent = str == null ? "" : String(str);
+      return el.innerHTML;
+    }
+
+    async function postComplaintToBackend(description, location, reporter = "") {
+      const res = await fetch(`${BACKEND}/api/complaints`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description, location, reporter }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 400 && data.error === "invalid_complaint") {
+          const err = new Error("INVALID_COMPLAINT");
+          err.reason = data.reason || "";
+          throw err;
+        }
+        const err = new Error("SUBMIT_FAILED");
+        err.body = data;
+        throw err;
+      }
+      return data;
+    }
+
+    const chatState = {
+      phase: "intro",
+      issueText: "",
+      followupQuestions: [],
+      followupAnswers: [],
+      extraDetails: [],
+      openedOnce: false,
+    };
+
+    function getChatEls() {
+      return {
+        panel: document.getElementById("chatPanel"),
+        messages: document.getElementById("chatMessages"),
+        typing: document.getElementById("chatTyping"),
+        actions: document.getElementById("chatQuickActions"),
+        input: document.getElementById("chatInput"),
+      };
+    }
+
+    function scrollChatToBottom() {
+      const { messages } = getChatEls();
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function setChatTyping(on) {
+      getChatEls().typing.hidden = !on;
+      scrollChatToBottom();
+    }
+
+    function appendChatBot(text) {
+      const { messages } = getChatEls();
+      const div = document.createElement("div");
+      div.className = "msg bot";
+      div.innerHTML = escapeHtml(text).replace(/\n/g, "<br>");
+      messages.appendChild(div);
+      scrollChatToBottom();
+    }
+
+    function appendChatUser(text) {
+      const { messages } = getChatEls();
+      const div = document.createElement("div");
+      div.className = "msg user";
+      div.textContent = text;
+      messages.appendChild(div);
+      scrollChatToBottom();
+    }
+
+    function buildChatDescription() {
+      const lines = [];
+      if (chatState.issueText) lines.push(chatState.issueText);
+      for (const a of chatState.followupAnswers) {
+        if (a) lines.push(a);
+      }
+      for (const d of chatState.extraDetails) {
+        if (d) lines.push(d);
+      }
+      return lines.filter(Boolean).join("\n\n");
+    }
+
+    function planFollowups(text) {
+      const t = String(text || "").toLowerCase();
+      const qs = [];
+      if (/\b(garbage|trash|dump|waste|litter|rubbish)\b/.test(t)) {
+        qs.push("How long has this been going on?");
+      }
+      if (/\b(pothole|potholes|crater|road\s*damage|broken\s*road)\b/.test(t)) {
+        qs.push("Is it causing accidents or blocking traffic?");
+      }
+      if (qs.length >= 2) return qs.slice(0, 2);
+      if (qs.length === 1) {
+        if (/\b(sewage|sewer|drain|stagnant|smell|stink|stinking)\b/.test(t)) {
+          qs.push("How severe is the issue — any overflow or pests nearby?");
+        } else if (/\b(water\s*leak|leak|burst|pipe)\b/.test(t)) {
+          qs.push("Is water pooling on the road or entering nearby homes?");
+        } else if (/\b(power|electric|transformer|street\s*light|streetlight)\b/.test(t)) {
+          qs.push("Roughly how long has the outage or hazard been present?");
+        } else {
+          qs.push("Anything else we should know about the location or timing?");
+        }
+        return qs.slice(0, 2);
+      }
+      if (/\b(sewage|sewer|drain|smell|stink)\b/.test(t)) {
+        return ["How long has this been going on?", "How severe is the smell or overflow?"];
+      }
+      if (/\b(water|leak|pipe)\b/.test(t)) {
+        return ["How long has this been going on?", "Is it affecting traffic or nearby buildings?"];
+      }
+      if (/\b(power|electric|light)\b/.test(t)) {
+        return ["How long has this been an issue?", "Is there any safety hazard (sparking, open wires)?"];
+      }
+      return ["How long has this issue been going on?"];
+    }
+
+    function renderChatQuickActions() {
+      const { actions, input } = getChatEls();
+      actions.innerHTML = "";
+      if (chatState.phase !== "actions") return;
+      const done = document.createElement("button");
+      done.type = "button";
+      done.className = "btn secondary";
+      done.textContent = "Done";
+      done.onclick = () => {
+        chatState.phase = "location";
+        renderChatQuickActions();
+        input.disabled = false;
+        void chatBotDelay(() => {
+          appendChatBot("Which locality or area is this in?");
+        });
+      };
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "btn secondary";
+      more.textContent = "Add More Details";
+      more.onclick = () => {
+        chatState.phase = "extra";
+        renderChatQuickActions();
+        input.disabled = false;
+        void chatBotDelay(() => {
+          appendChatBot("Please share any additional details.");
+        });
+      };
+      actions.appendChild(done);
+      actions.appendChild(more);
+    }
+
+    function chatBotDelay(fn, ms = 380) {
+      setChatTyping(true);
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          setChatTyping(false);
+          fn();
+          resolve();
+        }, ms);
+      });
+    }
+
+    function resetChatConversation() {
+      chatState.phase = "intro";
+      chatState.issueText = "";
+      chatState.followupQuestions = [];
+      chatState.followupAnswers = [];
+      chatState.extraDetails = [];
+      getChatEls().messages.innerHTML = "";
+      renderChatQuickActions();
+      getChatEls().input.disabled = false;
+    }
+
+    function openChatPanel() {
+      const { panel, input } = getChatEls();
+      panel.classList.add("open");
+      panel.setAttribute("aria-hidden", "false");
+      if (!chatState.openedOnce) {
+        chatState.openedOnce = true;
+        appendChatBot("Hi! What issue are you facing? Please describe it.");
+      }
+      input.focus();
+    }
+
+    function closeChatPanel() {
+      const { panel } = getChatEls();
+      panel.classList.remove("open");
+      panel.setAttribute("aria-hidden", "true");
+    }
+
+    async function handleChatSend() {
+      const { input } = getChatEls();
+      const raw = input.value.trim();
+      if (!raw) return;
+      if (chatState.phase === "submitting") return;
+
+      appendChatUser(raw);
+      input.value = "";
+
+      if (chatState.phase === "intro") {
+        chatState.issueText = raw;
+        chatState.followupQuestions = planFollowups(raw);
+        chatState.followupAnswers = [];
+        chatState.extraDetails = [];
+        if (chatState.followupQuestions.length > 0) {
+          chatState.phase = "followup";
+          await chatBotDelay(() => {
+            appendChatBot(chatState.followupQuestions[0]);
+          });
+        } else {
+          chatState.phase = "actions";
+          await chatBotDelay(() => {
+            appendChatBot("Thanks. When you are ready, tap Done or add more details.");
+          });
+          renderChatQuickActions();
+        }
+        return;
+      }
+
+      if (chatState.phase === "followup") {
+        chatState.followupAnswers.push(raw);
+        const nextIdx = chatState.followupAnswers.length;
+        if (nextIdx < chatState.followupQuestions.length) {
+          await chatBotDelay(() => {
+            appendChatBot(chatState.followupQuestions[nextIdx]);
+          });
+        } else {
+          chatState.phase = "actions";
+          await chatBotDelay(() => {
+            appendChatBot("Thanks. When you are ready, tap Done or add more details.");
+          });
+          renderChatQuickActions();
+        }
+        return;
+      }
+
+      if (chatState.phase === "extra") {
+        chatState.extraDetails.push(raw);
+        chatState.phase = "actions";
+        await chatBotDelay(() => {
+          appendChatBot("Got it. Tap Done when you are finished, or add more details.");
+        });
+        renderChatQuickActions();
+        return;
+      }
+
+      if (chatState.phase === "location") {
+        const description = buildChatDescription();
+        const location = raw;
+        chatState.phase = "submitting";
+        renderChatQuickActions();
+        input.disabled = true;
+        await chatBotDelay(() => {
+          appendChatBot("Got it! Raising your complaint now...");
+        }, 450);
+        setChatTyping(true);
+        try {
+          const ticket = await postComplaintToBackend(description, location, "");
+          await setDoc(doc(fdb, "complaints", ticket.complaint_id), ticket);
+          setChatTyping(false);
+          appendChatBot(`All set — your complaint ID is ${ticket.complaint_id}.`);
+          toast("Complaint submitted via chat.");
+          resetChatConversation();
+          appendChatBot("Hi! What issue are you facing? Please describe it.");
+        } catch (err) {
+          setChatTyping(false);
+          input.disabled = false;
+          if (err.message === "INVALID_COMPLAINT") {
+            getChatEls().messages.innerHTML = "";
+            appendChatBot("This doesn't seem like a valid complaint. Can you describe the issue more clearly?");
+            chatState.phase = "intro";
+            chatState.issueText = "";
+            chatState.followupQuestions = [];
+            chatState.followupAnswers = [];
+            chatState.extraDetails = [];
+            renderChatQuickActions();
+          } else {
+            chatState.phase = "location";
+            appendChatBot("Something went wrong. Please try again in a moment.");
+          }
+        }
+      }
     }
 
     function urgencyBar(score) {
@@ -239,15 +593,15 @@
       return `<span class="badge ${key}">${p || "Medium"}</span>`;
     }
 
-    function slaBadge(breached) {
-      return breached ? `<span class="badge sla-breached">Breached</span>` : `<span class="badge sla-ok">On Time</span>`;
+    function getDashboardData() {
+      if (!state.dashboardLocality) return state.complaints;
+      return state.complaints.filter(c => String(c.locality || "").toLowerCase() === state.dashboardLocality.toLowerCase());
     }
 
     function renderKpis() {
-      const all = state.complaints;
+      const all = getDashboardData();
       const model = {
         total: all.length,
-        slaBreached: all.filter(c => c.sla_breached).length,
         highPriority: all.filter(c => c.priority === "High").length,
         resolved: all.filter(c => String(c.status || "").toLowerCase() === "resolved").length,
         flaggedLocations: all.filter(c => c.location_flagged).length,
@@ -262,10 +616,70 @@
       `).join("");
     }
 
+    function getPatternAnalysis(c) {
+      const p = c?.pattern_analysis;
+      return p && typeof p === "object" ? p : null;
+    }
+
+    function buildPatternAlertHtml(pattern) {
+      if (!pattern) return "";
+      const cards = [];
+      if (pattern.emergency_spike === true) {
+        cards.push(`
+          <div class="pattern-banner pattern-emergency">
+            <strong>Emergency Spike Detected</strong>
+            <div style="margin-top:6px;">${pattern.spike_details || "3+ recent complaints detected in same locality within 24 hours."}</div>
+          </div>
+        `);
+      }
+      if (pattern.locality_pattern_detected === true) {
+        const lp = pattern.locality_pattern || {};
+        cards.push(`
+          <div class="pattern-banner pattern-locality">
+            <strong>Locality Pattern Detected</strong>
+            <div style="margin-top:6px;"><strong>Summary:</strong> ${lp.summary || "-"}</div>
+            <div><strong>Root Cause:</strong> ${lp.root_cause || "-"}</div>
+            <div><strong>Severity:</strong> ${lp.severity || "-"}</div>
+            <div><strong>Recommendation:</strong> ${lp.recommendation || "-"}</div>
+          </div>
+        `);
+      }
+      if (pattern.citywide_pattern_detected === true) {
+        const cp = pattern.citywide_pattern || {};
+        const affected = Array.isArray(cp.localities_affected) ? cp.localities_affected.join(", ") : "-";
+        cards.push(`
+          <div class="pattern-banner pattern-citywide">
+            <strong>Citywide Pattern Detected</strong>
+            <div style="margin-top:6px;"><strong>Affected Localities:</strong> ${affected || "-"}</div>
+            <div><strong>Severity:</strong> ${cp.severity || "-"}</div>
+            <div><strong>Recommendation:</strong> ${cp.recommendation || "-"}</div>
+          </div>
+        `);
+      }
+      return cards.join("");
+    }
+
+    function renderPatternAlert() {
+      const host = document.getElementById("patternAlertWrap");
+      const source = getDashboardData();
+      const detected = source
+        .filter(c => {
+          const p = getPatternAnalysis(c);
+          return !!p && (p.emergency_spike === true || p.locality_pattern_detected === true || p.citywide_pattern_detected === true);
+        })
+        .sort((a, b) => String(b.reported_at || "").localeCompare(String(a.reported_at || "")));
+      if (!detected.length) {
+        host.innerHTML = "";
+        return;
+      }
+      const latestPattern = getPatternAnalysis(detected[0]);
+      host.innerHTML = buildPatternAlertHtml(latestPattern);
+    }
+
     function renderDashboardCharts() {
       const byCategory = {};
       const byPriority = { High: 0, Medium: 0, Low: 0 };
-      state.complaints.forEach(c => {
+      getDashboardData().forEach(c => {
         const cat = c.category || "Unknown";
         byCategory[cat] = (byCategory[cat] || 0) + 1;
         if (byPriority[c.priority] !== undefined) byPriority[c.priority] += 1;
@@ -295,7 +709,7 @@
 
     function renderRecentTable() {
       const host = document.getElementById("recentWrap");
-      const rows = [...state.complaints]
+      const rows = [...getDashboardData()]
         .sort((a, b) => Number(b.urgency_score || 0) - Number(a.urgency_score || 0))
         .slice(0, 10);
       if (!rows.length) {
@@ -318,15 +732,13 @@
       const q = document.getElementById("searchInput").value.trim().toLowerCase();
       const cat = document.getElementById("categoryFilter").value;
       const pri = document.getElementById("priorityFilter").value;
-      const sla = document.getElementById("slaFilter").value;
       const boost = document.getElementById("boostFilter").value;
       return data.filter(c => {
         const okSearch = !q || (c.description || "").toLowerCase().includes(q) || (c.location || "").toLowerCase().includes(q);
         const okCat = !cat || c.category === cat;
         const okPri = !pri || c.priority === pri;
-        const okSla = !sla || (sla === "breached" ? !!c.sla_breached : !c.sla_breached);
         const okBoost = !boost || (boost === "boosted" ? !!c.priority_boosted : !c.priority_boosted);
-        return okSearch && okCat && okPri && okSla && okBoost;
+        return okSearch && okCat && okPri && okBoost;
       });
     }
 
@@ -338,7 +750,7 @@
         return;
       }
       host.innerHTML = `<table><thead><tr>
-        <th>ID</th><th>Description</th><th>Location</th><th>Category</th><th>Priority</th><th>SLA</th><th>Boosted</th><th>Urgency</th>
+        <th>ID</th><th>Description</th><th>Location</th><th>Category</th><th>Priority</th><th>Boosted</th><th>Urgency</th>
       </tr></thead><tbody>${filtered.map(r => `
         <tr data-id="${r.complaint_id}">
           <td class="mono">${r.complaint_id || "-"}</td>
@@ -346,7 +758,6 @@
           <td>${r.location || "-"}</td>
           <td>${r.category || "-"}</td>
           <td>${priorityBadge(r.priority)}</td>
-          <td>${slaBadge(r.sla_breached)}</td>
           <td>${r.priority_boosted ? "Yes" : "No"}</td>
           <td>${urgencyBar(r.urgency_score)}</td>
         </tr>
@@ -361,13 +772,18 @@
           const c = state.complaints.find(x => x.complaint_id === id);
           if (!c) return;
           const modal = document.getElementById("detailModal");
-          const fields = Object.entries(c).map(([k, v]) => `
+          const hiddenKeys = new Set([
+            "sla_deadline", "sla_breached", "time_remaining", "is_overdue", "overdue_minutes", "remaining_minutes",
+            "root_cause",
+          ]);
+          const fields = Object.entries(c).filter(([k]) => !hiddenKeys.has(k)).map(([k, v]) => `
             <div><strong>${k}</strong><div class="mono">${Array.isArray(v) ? v.join(", ") : String(v)}</div></div>
           `).join("");
           modal.innerHTML = `
             <h3>Complaint ${c.complaint_id}</h3>
             ${c.priority_boosted ? `<div class="warn-banner">Priority boosted: ${c.boost_reason || "Similar complaints detected."}</div>` : ""}
             ${c.location_flagged ? `<div class="warn-banner">Location flagged: ${c.flag_reason || "Potentially sensitive area."}</div>` : ""}
+            ${c.pattern_signal === "strong" ? `<div class="warn-banner">Pattern alert: ${c.pattern_alert || "Strong recurrence trend detected."}</div>` : ""}
             <div class="row">${fields}</div>
             <div style="margin-top:12px;"><button class="btn secondary" id="closeModalBtn">Close</button></div>
           `;
@@ -383,10 +799,192 @@
       return "#63b37a";
     }
 
+    function hashToNumber(text) {
+      let hash = 0;
+      for (let i = 0; i < String(text || "").length; i += 1) {
+        hash = ((hash << 5) - hash) + String(text).charCodeAt(i);
+        hash |= 0;
+      }
+      return Math.abs(hash);
+    }
+
+    function normalizeText(value) {
+      return String(value || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+    }
+
+    function tokenize(value) {
+      const stop = new Set(["road", "rd", "street", "st", "main", "near", "opp", "opposite", "lane", "area", "colony", "junction"]);
+      return normalizeText(value).split(" ").filter(Boolean).filter(t => !stop.has(t));
+    }
+
+    function levenshteinDistance(a, b) {
+      const left = normalizeText(a);
+      const right = normalizeText(b);
+      const m = left.length;
+      const n = right.length;
+      if (m === 0) return n;
+      if (n === 0) return m;
+      const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+      for (let i = 0; i <= m; i += 1) dp[i][0] = i;
+      for (let j = 0; j <= n; j += 1) dp[0][j] = j;
+      for (let i = 1; i <= m; i += 1) {
+        for (let j = 1; j <= n; j += 1) {
+          const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+          dp[i][j] = Math.min(
+            dp[i - 1][j] + 1,
+            dp[i][j - 1] + 1,
+            dp[i - 1][j - 1] + cost
+          );
+        }
+      }
+      return dp[m][n];
+    }
+
+    function normalizedEditSimilarity(a, b) {
+      const left = normalizeText(a);
+      const right = normalizeText(b);
+      if (!left && !right) return 1;
+      if (!left || !right) return 0;
+      const d = levenshteinDistance(left, right);
+      return 1 - (d / Math.max(left.length, right.length));
+    }
+
+    function ngramDice(a, b, n = 2) {
+      const left = normalizeText(a);
+      const right = normalizeText(b);
+      if (!left || !right) return 0;
+      if (left === right) return 1;
+      const grams = (s) => {
+        if (s.length < n) return [s];
+        const out = [];
+        for (let i = 0; i <= s.length - n; i += 1) out.push(s.slice(i, i + n));
+        return out;
+      };
+      const l = grams(left);
+      const r = grams(right);
+      const counts = new Map();
+      for (const g of l) counts.set(g, (counts.get(g) || 0) + 1);
+      let inter = 0;
+      for (const g of r) {
+        const c = counts.get(g) || 0;
+        if (c > 0) {
+          inter += 1;
+          counts.set(g, c - 1);
+        }
+      }
+      return (2 * inter) / (l.length + r.length);
+    }
+
+    function tokenOverlapScore(locationTokens, centerTokens) {
+      if (!locationTokens.length || !centerTokens.length) return 0;
+      const lSet = new Set(locationTokens);
+      const cSet = new Set(centerTokens);
+      let common = 0;
+      cSet.forEach((tok) => {
+        if (lSet.has(tok)) common += 1;
+      });
+      return common / cSet.size;
+    }
+
+    function tokenJaccard(locationTokens, centerTokens) {
+      const lSet = new Set(locationTokens);
+      const cSet = new Set(centerTokens);
+      const union = new Set([...lSet, ...cSet]).size;
+      if (!union) return 0;
+      let inter = 0;
+      cSet.forEach((tok) => { if (lSet.has(tok)) inter += 1; });
+      return inter / union;
+    }
+
+    function tokenPrefixHit(locationTokens, centerTokens) {
+      if (!locationTokens.length || !centerTokens.length) return 0;
+      let hits = 0;
+      for (const ct of centerTokens) {
+        for (const lt of locationTokens) {
+          if (lt.startsWith(ct) || ct.startsWith(lt)) {
+            hits += 1;
+            break;
+          }
+        }
+      }
+      return hits / centerTokens.length;
+    }
+
+    function findAreaCenter(location) {
+      const loc = normalizeText(location);
+      if (!loc || !state.hydCenters.length) return { center: null, score: 0 };
+      const locationTokens = tokenize(loc);
+      let best = null;
+      let bestScore = -1;
+      for (const center of state.hydCenters) {
+        const name = normalizeText(center.name);
+        if (!name) continue;
+        const centerTokens = tokenize(name);
+        const directContains = (loc.includes(name) || name.includes(loc)) ? 1 : 0;
+        const overlap = tokenOverlapScore(locationTokens, centerTokens);
+        const jaccard = tokenJaccard(locationTokens, centerTokens);
+        const prefix = tokenPrefixHit(locationTokens, centerTokens);
+        const edit = normalizedEditSimilarity(loc, name);
+        const dice = ngramDice(loc, name, 2);
+
+        // Composite score tuned for locality names in noisy free-text addresses.
+        const score =
+          (directContains * 0.38) +
+          (overlap * 0.22) +
+          (jaccard * 0.14) +
+          (prefix * 0.08) +
+          (edit * 0.10) +
+          (dice * 0.08);
+
+        if (score > bestScore || (Math.abs(score - bestScore) < 1e-9 && name.length > normalizeText(best?.name || "").length)) {
+          bestScore = score;
+          best = center;
+        }
+      }
+      // Always return highest-scored area as requested.
+      return { center: best, score: Math.max(0, bestScore) };
+    }
+
+    function fallbackCoordsForComplaint(c) {
+      const seed = hashToNumber((c.complaint_id || "") + (c.location || ""));
+      const angle = (seed % 360) * (Math.PI / 180);
+      const match = findAreaCenter(c.location);
+      const center = match.center;
+      const centerLat = center ? Number(center.latitude) : 17.385;
+      const centerLng = center ? Number(center.longitude) : 78.4867;
+      const zoom = state.map ? state.map.getZoom() : 11;
+      const tightScatter = zoom >= 14;
+      const radius = tightScatter
+        ? (0.00025 + ((seed % 10) / 50000))  // ~25m to ~45m when zoomed in
+        : (0.001 + ((seed % 25) / 10000));   // ~110m to ~360m normal
+      return {
+        lat: centerLat + Math.sin(angle) * radius,
+        lng: centerLng + Math.cos(angle) * radius,
+      };
+    }
+
+    function getComplaintCoords(c) {
+      const match = findAreaCenter(c.location);
+      // Always trust best-scored location->area mapping for plotting.
+      if (match.center) {
+        return fallbackCoordsForComplaint(c);
+      }
+      const lat = Number(c.lat);
+      const lng = Number(c.lng);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        return { lat, lng };
+      }
+      return fallbackCoordsForComplaint(c);
+    }
+
     function renderMap() {
       if (!state.map) {
         state.map = L.map("mapCanvas").setView([17.385, 78.4867], 11);
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(state.map);
+        L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+          maxZoom: 20,
+          subdomains: "abcd",
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        }).addTo(state.map);
         const legend = L.control({ position: "bottomright" });
         legend.onAdd = () => {
           const div = L.DomUtil.create("div", "legend");
@@ -394,17 +992,21 @@
           return div;
         };
         legend.addTo(state.map);
+        setTimeout(() => state.map.invalidateSize(), 200);
       }
       state.markers.forEach(m => m.remove());
       state.markers = [];
       state.complaints.forEach(c => {
-        const lat = Number(c.lat);
-        const lng = Number(c.lng);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+        const coords = getComplaintCoords(c);
+        const lat = coords.lat;
+        const lng = coords.lng;
         const r = Math.max(6, Math.min(20, Number(c.urgency_score || 4) * 1.7));
         const marker = L.circleMarker([lat, lng], {
           radius: r, color: markerColor(c.priority), fillColor: markerColor(c.priority), fillOpacity: 0.7
         }).addTo(state.map);
+        const fallbackNote = (Number.isFinite(Number(c.lat)) && Number.isFinite(Number(c.lng)))
+          ? ""
+          : "<div><em>Approximate location (area center + careful scatter)</em></div>";
         marker.bindPopup(`
           <div>
             <div class="mono"><strong>${c.complaint_id || "-"}</strong></div>
@@ -412,18 +1014,41 @@
             <div><strong>Location:</strong> ${c.location || "-"}</div>
             <div><strong>Priority:</strong> ${c.priority || "-"}</div>
             <div><strong>Urgency:</strong> ${c.urgency_score || 0}</div>
+            ${fallbackNote}
           </div>
         `);
         state.markers.push(marker);
       });
+      if (state.markers.length > 0) {
+        const group = L.featureGroup(state.markers);
+        state.map.fitBounds(group.getBounds().pad(0.2));
+      } else {
+        state.map.setView([17.385, 78.4867], 11);
+      }
+      setTimeout(() => state.map.invalidateSize(), 100);
+    }
+
+    async function loadHydCenters() {
+      try {
+        const response = await fetch(`${BACKEND}/api/hyd-locations`);
+        if (!response.ok) throw new Error("Failed");
+        const data = await response.json();
+        state.hydCenters = Array.isArray(data) ? data : [];
+      } catch (err) {
+        state.hydCenters = [];
+      }
     }
 
     function hydrateFilters() {
       const cats = [...new Set(state.complaints.map(c => c.category).filter(Boolean))];
       document.getElementById("categoryFilter").innerHTML = `<option value="">All Categories</option>${cats.map(c => `<option>${c}</option>`).join("")}`;
+      const localities = [...new Set(state.complaints.map(c => c.locality).filter(Boolean))];
+      const localityEl = document.getElementById("dashboardLocalityFilter");
+      localityEl.innerHTML = `<option value="">All Localities</option>${localities.map(l => `<option value="${String(l).toLowerCase()}">${l}</option>`).join("")}`;
     }
 
     function renderAll() {
+      renderPatternAlert();
       renderKpis();
       renderDashboardCharts();
       renderRecentTable();
@@ -453,28 +1078,22 @@
       const host = document.getElementById("submitResult");
       host.innerHTML = `<div class="card loading">AI is analysing...</div>`;
       try {
-        const res = await fetch(`${BACKEND}/api/complaints`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ description, location, reporter })
-        });
-        if (!res.ok) throw new Error("Submission failed");
-        const ticket = await res.json();
+        const ticket = await postComplaintToBackend(description, location, reporter);
         await setDoc(doc(fdb, "complaints", ticket.complaint_id), ticket);
         host.innerHTML = `
           <div class="card">
             <h3 style="margin-top:0;">Complaint Submitted</h3>
             ${ticket.priority_boosted ? `<div class="warn-banner">${ticket.boost_reason}</div>` : ""}
             ${ticket.location_flagged ? `<div class="warn-banner">Location flagged: ${ticket.flag_reason || "Potential issue detected."}</div>` : ""}
+            ${buildPatternAlertHtml(getPatternAnalysis(ticket))}
             <div class="row">
               <div><strong>Category</strong><div>${ticket.category}</div></div>
               <div><strong>Priority</strong><div>${priorityBadge(ticket.priority)}</div></div>
               <div><strong>Urgency Score</strong><div class="mono">${ticket.urgency_score}</div></div>
               <div><strong>Department</strong><div>${ticket.department}</div></div>
-              <div><strong>SLA Deadline</strong><div class="mono">${ticket.sla_deadline}</div></div>
-              <div><strong>Root Cause</strong><div>${ticket.root_cause || "-"}</div></div>
               <div><strong>Similar Count</strong><div class="mono">${ticket.similar_count || 0}</div></div>
               <div><strong>Boost Reason</strong><div>${ticket.boost_reason || "-"}</div></div>
+              <div><strong>Pattern Analysis</strong><div>${getPatternAnalysis(ticket) ? "Completed" : "Not available"}</div></div>
             </div>
             <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
               <button class="btn secondary" id="viewAllBtn">View All Complaints</button>
@@ -490,10 +1109,33 @@
         };
         toast("Complaint submitted successfully.");
       } catch (err) {
+        if (err.message === "INVALID_COMPLAINT") {
+          const reason = err.reason || "This doesn't seem like a valid civic complaint. Please describe a real issue.";
+          host.innerHTML = `<div class="card"><div class="warn-banner" id="submitInvalidBanner"></div></div>`;
+          document.getElementById("submitInvalidBanner").textContent = reason;
+          toast("Complaint rejected as invalid.");
+          return;
+        }
         host.innerHTML = `<div class="card">Submission failed. Please try again.</div>`;
         toast("Submission failed.");
       }
     }
+
+    document.getElementById("chatFab").onclick = () => {
+      const panel = document.getElementById("chatPanel");
+      if (panel.classList.contains("open")) closeChatPanel();
+      else openChatPanel();
+    };
+    document.getElementById("chatClose").onclick = () => closeChatPanel();
+    document.getElementById("chatSend").onclick = () => { void handleChatSend(); };
+    document.getElementById("chatInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void handleChatSend();
+      }
+    });
+
+    await loadHydCenters();
 
     onSnapshot(collection(fdb, "complaints"), (snap) => {
       state.complaints = snap.docs.map(d => d.data()).sort((a, b) => String(b.reported_at || "").localeCompare(String(a.reported_at || "")));
@@ -517,9 +1159,16 @@
       if (e.target.id === "modalBackdrop") document.getElementById("modalBackdrop").style.display = "none";
     };
     document.getElementById("submitBtn").onclick = submitComplaint;
-    ["searchInput", "categoryFilter", "priorityFilter", "slaFilter", "boostFilter"].forEach(id => {
+    ["searchInput", "categoryFilter", "priorityFilter", "boostFilter"].forEach(id => {
       document.getElementById(id).addEventListener("input", renderAllComplaints);
       document.getElementById(id).addEventListener("change", renderAllComplaints);
+    });
+    document.getElementById("dashboardLocalityFilter").addEventListener("change", (e) => {
+      state.dashboardLocality = e.target.value;
+      renderPatternAlert();
+      renderKpis();
+      renderDashboardCharts();
+      renderRecentTable();
     });
     window.addEventListener("hashchange", route);
     route();
