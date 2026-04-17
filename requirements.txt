@@ -1,0 +1,11 @@
+flask
+flask-cors
+firebase-admin
+python-dotenv
+pandas
+scikit-learn
+numpy
+langchain
+groq
+pydantic
+requests

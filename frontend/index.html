@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CivicPulse Hyderabad</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      --bg: #161312;
+      --surface: #221d1b;
+      --surface-soft: #2b2522;
+      --text: #f1ece9;
+      --muted: #b7aba6;
+      --primary: #4f98a3;
+      --border: #3a312d;
+      --danger: #e35d5d;
+      --warn: #e9b44c;
+      --good: #63b37a;
+      --info: #4d8de6;
+      --radius: 14px;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+      --space-1: 6px;
+      --space-2: 10px;
+      --space-3: 14px;
+      --space-4: 18px;
+      --space-5: 24px;
+    }
+    body.light {
+      --bg: #f6f8fb;
+      --surface: #ffffff;
+      --surface-soft: #f1f5f9;
+      --text: #162029;
+      --muted: #5e6c79;
+      --border: #d7e0e8;
+      --shadow: 0 8px 22px rgba(16, 24, 40, 0.08);
+    }
+    * { box-sizing: border-box; transition: all 0.2s ease; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Inter", sans-serif;
+    }
+    .app { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: 260px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: var(--space-5) var(--space-4);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+    .brand { font-weight: 700; font-size: 1.25rem; margin-bottom: var(--space-4); }
+    .nav a {
+      display: block; text-decoration: none; color: var(--text);
+      background: transparent; border: 1px solid transparent; padding: 12px; border-radius: 10px; margin: 8px 0;
+    }
+    .nav a.active, .nav a:hover { background: var(--surface-soft); border-color: var(--border); }
+    .main { flex: 1; padding: var(--space-5); }
+    .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-5); }
+    .btn {
+      background: var(--primary); border: none; color: #fff; padding: 10px 14px; border-radius: 10px; cursor: pointer; font-weight: 600;
+    }
+    .btn.secondary { background: var(--surface-soft); color: var(--text); border: 1px solid var(--border); }
+    .grid { display: grid; gap: var(--space-4); }
+    .kpis { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: var(--space-4);
+      box-shadow: var(--shadow);
+    }
+    .kpi-value { font-family: "JetBrains Mono", monospace; font-size: 1.6rem; font-weight: 700; margin-top: var(--space-2); }
+    .section { display: none; }
+    .section.active { display: block; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border); font-size: 0.92rem; }
+    th { color: var(--muted); font-weight: 600; }
+    tr { cursor: pointer; }
+    .badge { padding: 4px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; color: #fff; display: inline-block; }
+    .high { background: var(--danger); }
+    .medium { background: var(--warn); color: #1d1200; }
+    .low { background: var(--good); }
+    .sla-ok { background: var(--info); }
+    .sla-breached { background: var(--danger); }
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    input, select, textarea {
+      width: 100%; background: var(--surface-soft); color: var(--text);
+      border: 1px solid var(--border); border-radius: 10px; padding: 10px;
+      font-family: inherit;
+    }
+    .controls input, .controls select { width: 190px; }
+    #mapCanvas { height: 560px; border-radius: var(--radius); border: 1px solid var(--border); }
+    .legend { background: var(--surface); padding: 10px; border: 1px solid var(--border); border-radius: 10px; line-height: 1.5; }
+    .mono { font-family: "JetBrains Mono", monospace; }
+    .urgency-wrap { background: var(--surface-soft); border-radius: 999px; height: 9px; width: 110px; overflow: hidden; }
+    .urgency-fill { height: 100%; }
+    .loading { animation: pulse 1.2s infinite; }
+    .skeleton { height: 90px; border-radius: 10px; background: var(--surface-soft); border: 1px solid var(--border); }
+    @keyframes pulse { 0%{opacity:0.55;}50%{opacity:1;}100%{opacity:0.55;} }
+    .toast-wrap { position: fixed; right: 20px; top: 20px; display: grid; gap: 8px; z-index: 2000; }
+    .toast { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; box-shadow: var(--shadow); }
+    .empty { color: var(--muted); text-align: center; padding: 24px; }
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.54); place-items: center; z-index: 3000;
+    }
+    .modal { width: min(760px, 92vw); max-height: 88vh; overflow-y: auto; }
+    .row { display: grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap: 12px; }
+    .warn-banner { background: rgba(227,93,93,0.18); border: 1px solid var(--danger); padding: 10px; border-radius: 10px; margin: 10px 0; }
+    .hamburger { display: none; }
+    @media (max-width: 880px) {
+      .hamburger { display: block; }
+      .sidebar { position: fixed; left: -280px; z-index: 2500; }
+      .sidebar.open { left: 0; }
+      .main { padding: 16px; }
+      .controls input, .controls select { width: 100%; }
+    }
+  </style>
+</head>
+<body class="dark">
+  <div class="toast-wrap" id="toasts"></div>
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="card modal" id="detailModal"></div>
+  </div>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">CivicPulse HYD</div>
+      <nav class="nav">
+        <a href="#dashboard">Dashboard</a>
+        <a href="#complaints">All Complaints</a>
+        <a href="#map">Map View</a>
+        <a href="#submit">Submit Complaint</a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="topbar">
+        <button class="btn secondary hamburger" id="menuBtn">Menu</button>
+        <div class="mono" id="liveStamp">Syncing...</div>
+        <button class="btn secondary" id="themeToggle">Toggle Theme</button>
+      </div>
+
+      <section id="dashboard" class="section">
+        <div id="kpiGrid" class="grid kpis"></div>
+        <div class="grid" style="grid-template-columns: repeat(auto-fit,minmax(320px,1fr)); margin-top: 16px;">
+          <div class="card"><canvas id="categoryChart" height="230"></canvas></div>
+          <div class="card"><canvas id="priorityChart" height="230"></canvas></div>
+        </div>
+        <div class="card" style="margin-top: 16px;">
+          <h3 style="margin-top:0;">Recent Complaints (Top 10 urgency)</h3>
+          <div id="recentWrap"></div>
+        </div>
+      </section>
+
+      <section id="complaints" class="section">
+        <div class="controls">
+          <input id="searchInput" placeholder="Search description or location" />
+          <select id="categoryFilter"><option value="">All Categories</option></select>
+          <select id="priorityFilter"><option value="">All Priorities</option><option>High</option><option>Medium</option><option>Low</option></select>
+          <select id="slaFilter"><option value="">All SLA</option><option value="breached">Breached</option><option value="ontime">On Time</option></select>
+          <select id="boostFilter"><option value="">All Boost</option><option value="boosted">Priority Boosted</option><option value="not_boosted">Not Boosted</option></select>
+        </div>
+        <div class="card">
+          <div id="allTableWrap"></div>
+        </div>
+      </section>
+
+      <section id="map" class="section">
+        <div class="card">
+          <div id="mapCanvas"></div>
+        </div>
+      </section>
+
+      <section id="submit" class="section">
+        <div class="card">
+          <h3 style="margin-top:0;">File a New Complaint</h3>
+          <div class="grid" style="gap: 10px;">
+            <textarea id="descInput" rows="4" placeholder="Describe the issue in detail"></textarea>
+            <input id="locationInput" placeholder="Location (e.g., Near Charminar)" />
+            <input id="reporterInput" placeholder="Reporter name (optional)" />
+            <button class="btn" id="submitBtn">Submit Complaint</button>
+          </div>
+        </div>
+        <div id="submitResult" style="margin-top: 16px;"></div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import {
+      getFirestore, collection, onSnapshot, doc, setDoc
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    const BACKEND = "http://localhost:5000";
+    const firebaseConfig = {
+      apiKey: "AIzaSyAF7gQhw8Qc21lXEQ8ppJYJeLMk8S9S_9I",
+      authDomain: "public-grievance-b14ef.firebaseapp.com",
+      projectId: "public-grievance-b14ef",
+      storageBucket: "public-grievance-b14ef.firebasestorage.app",
+      messagingSenderId: "62897685512",
+      appId: "1:62897685512:web:25b79da99852c9effc7dbd"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const fdb = getFirestore(app);
+
+    const state = { complaints: [], map: null, markers: [], categoryChart: null, priorityChart: null };
+
+    const kpis = [
+      ["Total", "total"], ["SLA Breached", "slaBreached"], ["High Priority", "highPriority"],
+      ["Resolved", "resolved"], ["Flagged Locations", "flaggedLocations"], ["Priority Boosted", "priorityBoosted"]
+    ];
+
+    function toast(msg) {
+      const wrap = document.getElementById("toasts");
+      const div = document.createElement("div");
+      div.className = "toast";
+      div.textContent = msg;
+      wrap.appendChild(div);
+      setTimeout(() => div.remove(), 3000);
+    }
+
+    function urgencyBar(score) {
+      const cl = score >= 8 ? "var(--danger)" : score >= 5 ? "var(--warn)" : "var(--good)";
+      const w = Math.max(0, Math.min(10, Number(score || 0))) * 10;
+      return `<div class="urgency-wrap"><div class="urgency-fill" style="width:${w}%;background:${cl};"></div></div>`;
+    }
+
+    function priorityBadge(p) {
+      const key = String(p || "Medium").toLowerCase();
+      return `<span class="badge ${key}">${p || "Medium"}</span>`;
+    }
+
+    function slaBadge(breached) {
+      return breached ? `<span class="badge sla-breached">Breached</span>` : `<span class="badge sla-ok">On Time</span>`;
+    }
+
+    function renderKpis() {
+      const all = state.complaints;
+      const model = {
+        total: all.length,
+        slaBreached: all.filter(c => c.sla_breached).length,
+        highPriority: all.filter(c => c.priority === "High").length,
+        resolved: all.filter(c => String(c.status || "").toLowerCase() === "resolved").length,
+        flaggedLocations: all.filter(c => c.location_flagged).length,
+        priorityBoosted: all.filter(c => c.priority_boosted).length
+      };
+      const host = document.getElementById("kpiGrid");
+      host.innerHTML = kpis.map(([title, key]) => `
+        <div class="card ${all.length ? "" : "loading"}">
+          <div>${title}</div>
+          <div class="kpi-value">${model[key]}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderDashboardCharts() {
+      const byCategory = {};
+      const byPriority = { High: 0, Medium: 0, Low: 0 };
+      state.complaints.forEach(c => {
+        const cat = c.category || "Unknown";
+        byCategory[cat] = (byCategory[cat] || 0) + 1;
+        if (byPriority[c.priority] !== undefined) byPriority[c.priority] += 1;
+      });
+
+      const catCtx = document.getElementById("categoryChart");
+      const priCtx = document.getElementById("priorityChart");
+      state.categoryChart?.destroy();
+      state.priorityChart?.destroy();
+
+      state.categoryChart = new Chart(catCtx, {
+        type: "bar",
+        data: {
+          labels: Object.keys(byCategory),
+          datasets: [{ label: "Complaints", data: Object.values(byCategory), backgroundColor: "#4f98a3" }]
+        },
+        options: { responsive: true, plugins: { legend: { display: false } } }
+      });
+      state.priorityChart = new Chart(priCtx, {
+        type: "doughnut",
+        data: {
+          labels: ["High", "Medium", "Low"],
+          datasets: [{ data: [byPriority.High, byPriority.Medium, byPriority.Low], backgroundColor: ["#e35d5d", "#e9b44c", "#63b37a"] }]
+        }
+      });
+    }
+
+    function renderRecentTable() {
+      const host = document.getElementById("recentWrap");
+      const rows = [...state.complaints]
+        .sort((a, b) => Number(b.urgency_score || 0) - Number(a.urgency_score || 0))
+        .slice(0, 10);
+      if (!rows.length) {
+        host.innerHTML = `<div class="empty">No complaints yet. Submit one to begin.</div>`;
+        return;
+      }
+      host.innerHTML = `<table><thead><tr><th>ID</th><th>Description</th><th>Category</th><th>Priority</th><th>Urgency</th></tr></thead>
+        <tbody>${rows.map(r => `
+          <tr data-id="${r.complaint_id}">
+            <td class="mono">${r.complaint_id || "-"}</td>
+            <td>${(r.description || "").slice(0, 80)}</td>
+            <td>${r.category || "-"}</td>
+            <td>${priorityBadge(r.priority)}</td>
+            <td>${urgencyBar(r.urgency_score)}</td>
+          </tr>`).join("")}</tbody></table>`;
+      attachRowClicks(host);
+    }
+
+    function applyFilters(data) {
+      const q = document.getElementById("searchInput").value.trim().toLowerCase();
+      const cat = document.getElementById("categoryFilter").value;
+      const pri = document.getElementById("priorityFilter").value;
+      const sla = document.getElementById("slaFilter").value;
+      const boost = document.getElementById("boostFilter").value;
+      return data.filter(c => {
+        const okSearch = !q || (c.description || "").toLowerCase().includes(q) || (c.location || "").toLowerCase().includes(q);
+        const okCat = !cat || c.category === cat;
+        const okPri = !pri || c.priority === pri;
+        const okSla = !sla || (sla === "breached" ? !!c.sla_breached : !c.sla_breached);
+        const okBoost = !boost || (boost === "boosted" ? !!c.priority_boosted : !c.priority_boosted);
+        return okSearch && okCat && okPri && okSla && okBoost;
+      });
+    }
+
+    function renderAllComplaints() {
+      const host = document.getElementById("allTableWrap");
+      const filtered = applyFilters(state.complaints);
+      if (!filtered.length) {
+        host.innerHTML = `<div class="empty">No complaints match current filters.</div>`;
+        return;
+      }
+      host.innerHTML = `<table><thead><tr>
+        <th>ID</th><th>Description</th><th>Location</th><th>Category</th><th>Priority</th><th>SLA</th><th>Boosted</th><th>Urgency</th>
+      </tr></thead><tbody>${filtered.map(r => `
+        <tr data-id="${r.complaint_id}">
+          <td class="mono">${r.complaint_id || "-"}</td>
+          <td>${(r.description || "").slice(0, 65)}</td>
+          <td>${r.location || "-"}</td>
+          <td>${r.category || "-"}</td>
+          <td>${priorityBadge(r.priority)}</td>
+          <td>${slaBadge(r.sla_breached)}</td>
+          <td>${r.priority_boosted ? "Yes" : "No"}</td>
+          <td>${urgencyBar(r.urgency_score)}</td>
+        </tr>
+      `).join("")}</tbody></table>`;
+      attachRowClicks(host);
+    }
+
+    function attachRowClicks(host) {
+      host.querySelectorAll("tr[data-id]").forEach(row => {
+        row.onclick = () => {
+          const id = row.dataset.id;
+          const c = state.complaints.find(x => x.complaint_id === id);
+          if (!c) return;
+          const modal = document.getElementById("detailModal");
+          const fields = Object.entries(c).map(([k, v]) => `
+            <div><strong>${k}</strong><div class="mono">${Array.isArray(v) ? v.join(", ") : String(v)}</div></div>
+          `).join("");
+          modal.innerHTML = `
+            <h3>Complaint ${c.complaint_id}</h3>
+            ${c.priority_boosted ? `<div class="warn-banner">Priority boosted: ${c.boost_reason || "Similar complaints detected."}</div>` : ""}
+            ${c.location_flagged ? `<div class="warn-banner">Location flagged: ${c.flag_reason || "Potentially sensitive area."}</div>` : ""}
+            <div class="row">${fields}</div>
+            <div style="margin-top:12px;"><button class="btn secondary" id="closeModalBtn">Close</button></div>
+          `;
+          document.getElementById("modalBackdrop").style.display = "grid";
+          document.getElementById("closeModalBtn").onclick = () => document.getElementById("modalBackdrop").style.display = "none";
+        };
+      });
+    }
+
+    function markerColor(priority) {
+      if (priority === "High") return "#e35d5d";
+      if (priority === "Medium") return "#e9b44c";
+      return "#63b37a";
+    }
+
+    function renderMap() {
+      if (!state.map) {
+        state.map = L.map("mapCanvas").setView([17.385, 78.4867], 11);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(state.map);
+        const legend = L.control({ position: "bottomright" });
+        legend.onAdd = () => {
+          const div = L.DomUtil.create("div", "legend");
+          div.innerHTML = "<strong>Priority</strong><br><span style='color:#e35d5d;'>●</span> High<br><span style='color:#e9b44c;'>●</span> Medium<br><span style='color:#63b37a;'>●</span> Low";
+          return div;
+        };
+        legend.addTo(state.map);
+      }
+      state.markers.forEach(m => m.remove());
+      state.markers = [];
+      state.complaints.forEach(c => {
+        const lat = Number(c.lat);
+        const lng = Number(c.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+        const r = Math.max(6, Math.min(20, Number(c.urgency_score || 4) * 1.7));
+        const marker = L.circleMarker([lat, lng], {
+          radius: r, color: markerColor(c.priority), fillColor: markerColor(c.priority), fillOpacity: 0.7
+        }).addTo(state.map);
+        marker.bindPopup(`
+          <div>
+            <div class="mono"><strong>${c.complaint_id || "-"}</strong></div>
+            <div>${c.description || "-"}</div>
+            <div><strong>Location:</strong> ${c.location || "-"}</div>
+            <div><strong>Priority:</strong> ${c.priority || "-"}</div>
+            <div><strong>Urgency:</strong> ${c.urgency_score || 0}</div>
+          </div>
+        `);
+        state.markers.push(marker);
+      });
+    }
+
+    function hydrateFilters() {
+      const cats = [...new Set(state.complaints.map(c => c.category).filter(Boolean))];
+      document.getElementById("categoryFilter").innerHTML = `<option value="">All Categories</option>${cats.map(c => `<option>${c}</option>`).join("")}`;
+    }
+
+    function renderAll() {
+      renderKpis();
+      renderDashboardCharts();
+      renderRecentTable();
+      hydrateFilters();
+      renderAllComplaints();
+      renderMap();
+      document.getElementById("liveStamp").textContent = `Last sync ${new Date().toLocaleTimeString()}`;
+    }
+
+    function route() {
+      const hash = location.hash || "#dashboard";
+      document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
+      document.querySelector(hash)?.classList.add("active");
+      document.querySelectorAll(".nav a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === hash));
+      document.getElementById("sidebar").classList.remove("open");
+      if (hash === "#map" && state.map) setTimeout(() => state.map.invalidateSize(), 100);
+    }
+
+    async function submitComplaint() {
+      const description = document.getElementById("descInput").value.trim();
+      const location = document.getElementById("locationInput").value.trim();
+      const reporter = document.getElementById("reporterInput").value.trim();
+      if (!description || !location) {
+        toast("Description and location are required.");
+        return;
+      }
+      const host = document.getElementById("submitResult");
+      host.innerHTML = `<div class="card loading">AI is analysing...</div>`;
+      try {
+        const res = await fetch(`${BACKEND}/api/complaints`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description, location, reporter })
+        });
+        if (!res.ok) throw new Error("Submission failed");
+        const ticket = await res.json();
+        await setDoc(doc(fdb, "complaints", ticket.complaint_id), ticket);
+        host.innerHTML = `
+          <div class="card">
+            <h3 style="margin-top:0;">Complaint Submitted</h3>
+            ${ticket.priority_boosted ? `<div class="warn-banner">${ticket.boost_reason}</div>` : ""}
+            ${ticket.location_flagged ? `<div class="warn-banner">Location flagged: ${ticket.flag_reason || "Potential issue detected."}</div>` : ""}
+            <div class="row">
+              <div><strong>Category</strong><div>${ticket.category}</div></div>
+              <div><strong>Priority</strong><div>${priorityBadge(ticket.priority)}</div></div>
+              <div><strong>Urgency Score</strong><div class="mono">${ticket.urgency_score}</div></div>
+              <div><strong>Department</strong><div>${ticket.department}</div></div>
+              <div><strong>SLA Deadline</strong><div class="mono">${ticket.sla_deadline}</div></div>
+              <div><strong>Root Cause</strong><div>${ticket.root_cause || "-"}</div></div>
+              <div><strong>Similar Count</strong><div class="mono">${ticket.similar_count || 0}</div></div>
+              <div><strong>Boost Reason</strong><div>${ticket.boost_reason || "-"}</div></div>
+            </div>
+            <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
+              <button class="btn secondary" id="viewAllBtn">View All Complaints</button>
+              <button class="btn" id="submitAnotherBtn">Submit Another</button>
+            </div>
+          </div>`;
+        document.getElementById("viewAllBtn").onclick = () => { location.hash = "#complaints"; };
+        document.getElementById("submitAnotherBtn").onclick = () => {
+          document.getElementById("descInput").value = "";
+          document.getElementById("locationInput").value = "";
+          document.getElementById("reporterInput").value = "";
+          host.innerHTML = "";
+        };
+        toast("Complaint submitted successfully.");
+      } catch (err) {
+        host.innerHTML = `<div class="card">Submission failed. Please try again.</div>`;
+        toast("Submission failed.");
+      }
+    }
+
+    onSnapshot(collection(fdb, "complaints"), (snap) => {
+      state.complaints = snap.docs.map(d => d.data()).sort((a, b) => String(b.reported_at || "").localeCompare(String(a.reported_at || "")));
+      renderAll();
+    }, () => {
+      toast("Live sync failed; fetching backend data.");
+      fetch(`${BACKEND}/api/complaints`).then(r => r.json()).then(data => {
+        state.complaints = data;
+        renderAll();
+      }).catch(() => toast("Backend fetch failed."));
+    });
+
+    document.getElementById("themeToggle").onclick = () => {
+      document.body.classList.toggle("light");
+      localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
+    };
+    if (localStorage.getItem("theme") === "light") document.body.classList.add("light");
+
+    document.getElementById("menuBtn").onclick = () => document.getElementById("sidebar").classList.toggle("open");
+    document.getElementById("modalBackdrop").onclick = (e) => {
+      if (e.target.id === "modalBackdrop") document.getElementById("modalBackdrop").style.display = "none";
+    };
+    document.getElementById("submitBtn").onclick = submitComplaint;
+    ["searchInput", "categoryFilter", "priorityFilter", "slaFilter", "boostFilter"].forEach(id => {
+      document.getElementById(id).addEventListener("input", renderAllComplaints);
+      document.getElementById(id).addEventListener("change", renderAllComplaints);
+    });
+    window.addEventListener("hashchange", route);
+    route();
+  </script>
+</body>
+</html>

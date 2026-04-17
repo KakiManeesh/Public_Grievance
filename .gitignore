@@ -1,0 +1,4 @@
+.env
+fire_base.json
+backend/serviceAccountKey.json
+*.json
