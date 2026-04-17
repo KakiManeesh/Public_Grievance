@@ -11,6 +11,7 @@ import firebase_admin
 import groq
 import requests
 from dotenv import load_dotenv
+from firebase_admin import auth as firebase_auth
 from firebase_admin import credentials, firestore
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -69,6 +70,43 @@ if not firebase_admin._apps:
 db = firestore.client()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 _GEOCODE_CACHE: dict[str, dict[str, float]] = {}
+
+
+def _bearer_token() -> str | None:
+    header = request.headers.get("Authorization", "")
+    if not header.startswith("Bearer "):
+        return None
+    return header[7:].strip() or None
+
+
+def _verify_uid_from_token(token: str | None) -> str | None:
+    if not token:
+        return None
+    try:
+        decoded = firebase_auth.verify_id_token(token)
+        return str(decoded.get("uid", "")) or None
+    except Exception:
+        return None
+
+
+def _auth_uid_from_request() -> str | None:
+    return _verify_uid_from_token(_bearer_token())
+
+
+def _user_profile(uid: str) -> dict | None:
+    if not uid:
+        return None
+    doc = db.collection("users").document(uid).get()
+    if not doc.exists:
+        return None
+    return doc.to_dict()
+
+
+def _user_role(uid: str) -> str:
+    profile = _user_profile(uid)
+    if not profile:
+        return "user"
+    return str(profile.get("role", "user")).strip() or "user"
 
 
 def _get_all_complaints(limit: int = 500):
@@ -446,6 +484,17 @@ def create_complaint():
             400,
         )
 
+    auth_uid = _auth_uid_from_request()
+    profile = _user_profile(auth_uid) if auth_uid else None
+    payload_user_id = str(payload.get("user_id", "")).strip()
+    payload_user_name = str(payload.get("user_name", "")).strip()
+    user_id = auth_uid or payload_user_id
+    user_name = payload_user_name
+    if profile:
+        user_name = user_name or str(profile.get("name", "")).strip()
+    if auth_uid:
+        user_id = auth_uid
+
     complaint_id = str(uuid4())[:8]
     reported_at = _safe_iso_now()
     raw_complaint = {
@@ -456,7 +505,7 @@ def create_complaint():
         "reporter": reporter,
         "timestamp": reported_at,
         "reported_at": reported_at,
-        "status": "Open",
+        "status": "Pending",
     }
     lat, lng = _forward_geocode_hyderabad(location)
     locality_token = _extract_locality_token(location)
@@ -467,7 +516,11 @@ def create_complaint():
     classified = classify([raw_complaint])
     ticket = resolve(classified, departments)[0]
     ticket["reporter"] = reporter
-    ticket["status"] = ticket.get("status", "Open")
+    ticket["user_id"] = user_id or ""
+    ticket["user_name"] = user_name or ""
+    ticket["status"] = "Pending"
+    ticket["upvote_count"] = 0
+    ticket["upvoted_by"] = []
     ticket["reported_at"] = ticket.get("reported_at") or reported_at
     ticket["lat"] = ticket.get("lat", lat)
     ticket["lng"] = ticket.get("lng", lng)
@@ -557,6 +610,71 @@ def get_complaint_by_id(complaint_id: str):
     if not doc.exists:
         return jsonify({"error": "Complaint not found"}), 404
     return jsonify(doc.to_dict())
+
+
+@app.route("/api/complaints/<complaint_id>/status", methods=["PATCH"])
+def patch_complaint_status(complaint_id: str):
+    admin_uid = _auth_uid_from_request()
+    if not admin_uid:
+        return jsonify({"error": "authentication required"}), 401
+    if _user_role(admin_uid) != "admin":
+        return jsonify({"error": "admin only"}), 403
+    body = request.get_json(silent=True) or {}
+    new_status = str(body.get("status", "")).strip()
+    allowed = {"Pending", "In Progress", "Resolved"}
+    if new_status not in allowed:
+        return (
+            jsonify({"error": "invalid status", "allowed": list(allowed)}),
+            400,
+        )
+    ref = db.collection("complaints").document(complaint_id)
+    doc = ref.get()
+    if not doc.exists:
+        return jsonify({"error": "Complaint not found"}), 404
+    ref.update({"status": new_status})
+    return jsonify(ref.get().to_dict())
+
+
+@app.route("/api/complaints/user/<user_id>", methods=["GET"])
+def get_complaints_for_user(user_id: str):
+    uid = _auth_uid_from_request()
+    if not uid:
+        return jsonify({"error": "authentication required"}), 401
+    if uid != user_id and _user_role(uid) != "admin":
+        return jsonify({"error": "forbidden"}), 403
+    items = [
+        doc.to_dict()
+        for doc in db.collection("complaints")
+        .where("user_id", "==", user_id)
+        .stream()
+    ]
+    items.sort(
+        key=lambda x: str(x.get("reported_at") or x.get("timestamp") or ""),
+        reverse=True,
+    )
+    return jsonify(items)
+
+
+@app.route("/api/complaints/<complaint_id>/upvote", methods=["POST"])
+def upvote_complaint(complaint_id: str):
+    uid = _auth_uid_from_request()
+    if not uid:
+        return jsonify({"error": "authentication required"}), 401
+    ref = db.collection("complaints").document(complaint_id)
+    doc = ref.get()
+    if not doc.exists:
+        return jsonify({"error": "Complaint not found"}), 404
+    data = doc.to_dict()
+    voters = list(data.get("upvoted_by") or [])
+    if uid in voters:
+        return (
+            jsonify({"error": "already upvoted", "complaint": data}),
+            400,
+        )
+    voters.append(uid)
+    count = int(data.get("upvote_count") or 0) + 1
+    ref.update({"upvote_count": count, "upvoted_by": voters})
+    return jsonify(ref.get().to_dict())
 
 
 @app.route("/api/clusters", methods=["GET"])

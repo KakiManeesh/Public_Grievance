@@ -163,6 +163,21 @@
       .chat-widget { bottom: 16px; right: 16px; }
       .chat-panel { right: 0; left: auto; width: calc(100vw - 32px); max-width: 400px; }
     }
+    .hidden { display: none !important; }
+    .auth-screen {
+      min-height: 100vh; display: grid; place-items: center; padding: var(--space-5);
+      background: var(--bg);
+    }
+    .auth-card { width: min(400px, 100%); padding: var(--space-5); }
+    .auth-card h2 { margin: 0 0 var(--space-3); font-size: 1.1rem; }
+    .auth-toggle { display: flex; gap: 8px; margin-bottom: var(--space-4); }
+    .auth-toggle button { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-soft); color: var(--text); cursor: pointer; font-weight: 600; }
+    .auth-toggle button.active { background: var(--primary); color: #fff; border-color: transparent; }
+    .auth-form .grid { gap: 10px; margin-top: 10px; }
+    .auth-error { margin-top: 12px; font-size: 0.9rem; }
+    .notif-item { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+    .notif-item time { color: var(--muted); font-size: 0.8rem; display: block; margin-top: 4px; }
+    #adminHeatmap { height: 420px; border-radius: var(--radius); border: 1px solid var(--border); }
   </style>
 </head>
 <body class="dark">
@@ -170,6 +185,37 @@
   <div class="modal-backdrop" id="modalBackdrop">
     <div class="card modal" id="detailModal"></div>
   </div>
+
+  <div id="authScreen" class="auth-screen">
+    <div class="card auth-card">
+      <div class="brand" style="margin-bottom: var(--space-3);">CivicPulse HYD</div>
+      <p style="color: var(--muted); margin: 0 0 var(--space-4); font-size: 0.95rem;">Sign in to report issues or manage the city dashboard.</p>
+      <div class="auth-toggle" role="tablist">
+        <button type="button" class="active" id="authTabLogin" aria-selected="true">Login</button>
+        <button type="button" id="authTabSignup" aria-selected="false">Sign up</button>
+      </div>
+      <form id="loginForm" class="auth-form">
+        <h2>Welcome back</h2>
+        <div class="grid">
+          <input type="email" id="loginEmail" placeholder="Email" autocomplete="email" required />
+          <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" required />
+          <button type="submit" class="btn" id="loginSubmit">Login</button>
+        </div>
+      </form>
+      <form id="signupForm" class="auth-form hidden">
+        <h2>Create an account</h2>
+        <div class="grid">
+          <input type="text" id="signupName" placeholder="Full name" autocomplete="name" required />
+          <input type="email" id="signupEmail" placeholder="Email" autocomplete="email" required />
+          <input type="password" id="signupPassword" placeholder="Password (min 6 characters)" autocomplete="new-password" required minlength="6" />
+          <button type="submit" class="btn" id="signupSubmit">Create account</button>
+        </div>
+      </form>
+      <div id="authError" class="warn-banner auth-error hidden" role="alert"></div>
+    </div>
+  </div>
+
+  <div id="adminShell" class="hidden">
   <div class="app">
     <aside class="sidebar" id="sidebar">
       <div class="brand">CivicPulse HYD</div>
@@ -177,7 +223,7 @@
         <a href="#dashboard">Dashboard</a>
         <a href="#complaints">All Complaints</a>
         <a href="#map">Map View</a>
-        <a href="#submit">Submit Complaint</a>
+        <a href="#heatmap">Heatmap</a>
       </nav>
     </aside>
     <main class="main">
@@ -185,6 +231,7 @@
         <button class="btn secondary hamburger" id="menuBtn">Menu</button>
         <div class="mono" id="liveStamp">Syncing...</div>
         <button class="btn secondary" id="themeToggle">Toggle Theme</button>
+        <button class="btn secondary" id="adminLogoutBtn">Logout</button>
       </div>
 
       <section id="dashboard" class="section">
@@ -196,6 +243,7 @@
         <div class="grid" style="grid-template-columns: repeat(auto-fit,minmax(320px,1fr)); margin-top: 16px;">
           <div class="card"><canvas id="categoryChart" height="230"></canvas></div>
           <div class="card"><canvas id="priorityChart" height="230"></canvas></div>
+          <div class="card"><canvas id="trendChart" height="230"></canvas></div>
         </div>
         <div class="card" style="margin-top: 16px;">
           <h3 style="margin-top:0;">Recent Complaints (Top 10 urgency)</h3>
@@ -206,9 +254,13 @@
       <section id="complaints" class="section">
         <div class="controls">
           <input id="searchInput" placeholder="Search description or location" />
+          <input type="date" id="adminDateFrom" title="From date" />
+          <input type="date" id="adminDateTo" title="To date" />
+          <select id="adminLocalityFilter"><option value="">All Localities</option></select>
           <select id="categoryFilter"><option value="">All Categories</option></select>
           <select id="priorityFilter"><option value="">All Priorities</option><option>High</option><option>Medium</option><option>Low</option></select>
           <select id="boostFilter"><option value="">All Boost</option><option value="boosted">Priority Boosted</option><option value="not_boosted">Not Boosted</option></select>
+          <button type="button" class="btn secondary" id="adminExportCsv">Export CSV</button>
         </div>
         <div class="card">
           <div id="allTableWrap"></div>
@@ -221,17 +273,72 @@
         </div>
       </section>
 
-      <section id="submit" class="section">
+      <section id="heatmap" class="section">
         <div class="card">
-          <h3 style="margin-top:0;">File a New Complaint</h3>
+          <h3 style="margin-top:0;">Locality heatmap</h3>
+          <p style="color: var(--muted); margin-top: 0;">Complaint density by area (circle weight scales with count).</p>
+          <div id="adminHeatmap"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+  </div>
+
+  <div id="userShell" class="hidden">
+  <div class="app">
+    <aside class="sidebar" id="userSidebar">
+      <div class="brand">CivicPulse HYD</div>
+      <nav class="nav">
+        <a href="#user-submit" data-user-nav>Submit</a>
+        <a href="#user-my" data-user-nav>My Complaints</a>
+        <a href="#user-local" data-user-nav>Local issues</a>
+        <a href="#user-notify" data-user-nav>Notifications</a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="topbar">
+        <button class="btn secondary hamburger" id="userMenuBtn">Menu</button>
+        <div class="mono" id="userWelcome">—</div>
+        <button class="btn secondary" id="userThemeToggle">Toggle Theme</button>
+        <button class="btn secondary" id="userLogoutBtn">Logout</button>
+      </div>
+
+      <section id="user-submit" class="section active user-section">
+        <div class="card">
+          <h3 style="margin-top:0;">File a complaint</h3>
           <div class="grid" style="gap: 10px;">
-            <textarea id="descInput" rows="4" placeholder="Describe the issue in detail"></textarea>
-            <input id="locationInput" placeholder="Location (e.g., Near Charminar)" />
-            <input id="reporterInput" placeholder="Reporter name (optional)" />
-            <button class="btn" id="submitBtn">Submit Complaint</button>
+            <textarea id="userDescInput" rows="4" placeholder="Describe the issue in detail"></textarea>
+            <input id="userLocationInput" placeholder="Location (e.g., Near Charminar)" />
+            <button class="btn" id="userSubmitBtn">Submit Complaint</button>
           </div>
         </div>
-        <div id="submitResult" style="margin-top: 16px;"></div>
+        <div id="userSubmitResult" style="margin-top: 16px;"></div>
+      </section>
+
+      <section id="user-my" class="section user-section">
+        <div class="card">
+          <h3 style="margin-top:0;">My complaints</h3>
+          <div id="userMyComplaintsWrap"></div>
+        </div>
+      </section>
+
+      <section id="user-local" class="section user-section">
+        <div class="card">
+          <h3 style="margin-top:0;">Issues in your locality</h3>
+          <p style="color: var(--muted); margin-top:0;">Upvote an existing report instead of filing a duplicate when the same issue is already logged.</p>
+          <div class="controls">
+            <select id="userLocalitySelect"><option value="">Select locality</option></select>
+          </div>
+          <div id="userLocalComplaintsWrap"></div>
+        </div>
+      </section>
+
+      <section id="user-notify" class="section user-section">
+        <div class="card">
+          <h3 style="margin-top:0;">Notifications</h3>
+          <div id="userNotificationsWrap"></div>
+        </div>
       </section>
     </main>
   </div>
@@ -254,11 +361,28 @@
       </div>
     </div>
   </div>
+  </div>
 
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import {
-      getFirestore, collection, onSnapshot, doc, setDoc
+      getAuth,
+      onAuthStateChanged,
+      signInWithEmailAndPassword,
+      createUserWithEmailAndPassword,
+      signOut,
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import {
+      getFirestore,
+      collection,
+      onSnapshot,
+      doc,
+      setDoc,
+      getDoc,
+      query,
+      where,
+      serverTimestamp,
     } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     const BACKEND = "http://localhost:5000";
@@ -273,13 +397,30 @@
 
     const app = initializeApp(firebaseConfig);
     const fdb = getFirestore(app);
+    const auth = getAuth(app);
+
+    let currentProfile = null;
+    let unsubAdminComplaints = null;
+    let unsubUserMyComplaints = null;
+    let unsubLocalComplaints = null;
+    const userStatusPrev = new Map();
+    let userNotifications = [];
+
+    const userState = {
+      myComplaints: [],
+      localComplaints: [],
+      locality: "",
+    };
 
     const state = {
       complaints: [],
       map: null,
+      heatMap: null,
+      heatLayer: null,
       markers: [],
       categoryChart: null,
       priorityChart: null,
+      trendChart: null,
       dashboardLocality: "",
       hydCenters: []
     };
@@ -304,11 +445,46 @@
       return el.innerHTML;
     }
 
+    async function getIdTokenOrEmpty() {
+      const u = auth.currentUser;
+      if (!u) return "";
+      return await u.getIdToken();
+    }
+
+    /**
+     * Ensures Firestore has user_id / user_name so "My Complaints" queries match,
+     * even if the API could not verify the Bearer token (project mismatch, CORS, etc.).
+     */
+    function mergeTicketWithAuthUser(ticket) {
+      const u = auth.currentUser;
+      if (!ticket || !u) return ticket;
+      const name =
+        (currentProfile && currentProfile.name) ||
+        ticket.user_name ||
+        u.displayName ||
+        (u.email ? u.email.split("@")[0] : "") ||
+        "";
+      return {
+        ...ticket,
+        user_id: u.uid,
+        user_name: String(name).trim() || ticket.user_name || "",
+      };
+    }
+
     async function postComplaintToBackend(description, location, reporter = "") {
+      const headers = { "Content-Type": "application/json" };
+      const token = await getIdTokenOrEmpty();
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const body = {
+        description,
+        location,
+        reporter,
+        user_name: currentProfile?.name || "",
+      };
       const res = await fetch(`${BACKEND}/api/complaints`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description, location, reporter }),
+        headers,
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -556,9 +732,10 @@
         setChatTyping(true);
         try {
           const ticket = await postComplaintToBackend(description, location, "");
-          await setDoc(doc(fdb, "complaints", ticket.complaint_id), ticket);
+          const merged = mergeTicketWithAuthUser(ticket);
+          await setDoc(doc(fdb, "complaints", merged.complaint_id), merged);
           setChatTyping(false);
-          appendChatBot(`All set — your complaint ID is ${ticket.complaint_id}.`);
+          appendChatBot(`All set — your complaint ID is ${merged.complaint_id}.`);
           toast("Complaint submitted via chat.");
           resetChatConversation();
           appendChatBot("Hi! What issue are you facing? Please describe it.");
@@ -689,6 +866,16 @@
       const priCtx = document.getElementById("priorityChart");
       state.categoryChart?.destroy();
       state.priorityChart?.destroy();
+      state.trendChart?.destroy();
+
+      const byDay = {};
+      getDashboardData().forEach((c) => {
+        const day = String(c.reported_at || c.timestamp || "").slice(0, 10);
+        if (!day || day.length < 10) return;
+        byDay[day] = (byDay[day] || 0) + 1;
+      });
+      const trendLabels = Object.keys(byDay).sort();
+      const trendData = trendLabels.map((d) => byDay[d]);
 
       state.categoryChart = new Chart(catCtx, {
         type: "bar",
@@ -705,6 +892,15 @@
           datasets: [{ data: [byPriority.High, byPriority.Medium, byPriority.Low], backgroundColor: ["#e35d5d", "#e9b44c", "#63b37a"] }]
         }
       });
+      const trendCtx = document.getElementById("trendChart");
+      state.trendChart = new Chart(trendCtx, {
+        type: "line",
+        data: {
+          labels: trendLabels,
+          datasets: [{ label: "Complaints by day", data: trendData, borderColor: "#4f98a3", backgroundColor: "rgba(79,152,163,0.2)", fill: true, tension: 0.25 }]
+        },
+        options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { maxRotation: 45 } } } }
+      });
     }
 
     function renderRecentTable() {
@@ -713,7 +909,7 @@
         .sort((a, b) => Number(b.urgency_score || 0) - Number(a.urgency_score || 0))
         .slice(0, 10);
       if (!rows.length) {
-        host.innerHTML = `<div class="empty">No complaints yet. Submit one to begin.</div>`;
+        host.innerHTML = `<div class="empty">No complaints in this view yet.</div>`;
         return;
       }
       host.innerHTML = `<table><thead><tr><th>ID</th><th>Description</th><th>Category</th><th>Priority</th><th>Urgency</th></tr></thead>
@@ -733,12 +929,20 @@
       const cat = document.getElementById("categoryFilter").value;
       const pri = document.getElementById("priorityFilter").value;
       const boost = document.getElementById("boostFilter").value;
+      const locEl = document.getElementById("adminLocalityFilter");
+      const loc = locEl ? locEl.value : "";
+      const from = document.getElementById("adminDateFrom")?.value || "";
+      const to = document.getElementById("adminDateTo")?.value || "";
       return data.filter(c => {
         const okSearch = !q || (c.description || "").toLowerCase().includes(q) || (c.location || "").toLowerCase().includes(q);
         const okCat = !cat || c.category === cat;
         const okPri = !pri || c.priority === pri;
         const okBoost = !boost || (boost === "boosted" ? !!c.priority_boosted : !c.priority_boosted);
-        return okSearch && okCat && okPri && okBoost;
+        const okLoc = !loc || String(c.locality || "").toLowerCase() === loc.toLowerCase();
+        const reported = String(c.reported_at || c.timestamp || "").slice(0, 10);
+        const okFrom = !from || (reported && reported >= from);
+        const okTo = !to || (reported && reported <= to);
+        return okSearch && okCat && okPri && okBoost && okLoc && okFrom && okTo;
       });
     }
 
@@ -749,8 +953,12 @@
         host.innerHTML = `<div class="empty">No complaints match current filters.</div>`;
         return;
       }
+      const statusOpts = (cur) => {
+        const s = cur || "Pending";
+        return ["Pending", "In Progress", "Resolved"].map((opt) => `<option value="${opt}" ${s === opt ? "selected" : ""}>${opt}</option>`).join("");
+      };
       host.innerHTML = `<table><thead><tr>
-        <th>ID</th><th>Description</th><th>Location</th><th>Category</th><th>Priority</th><th>Boosted</th><th>Urgency</th>
+        <th>ID</th><th>Description</th><th>Location</th><th>Category</th><th>Priority</th><th>Status</th><th>Boosted</th><th>Urgency</th>
       </tr></thead><tbody>${filtered.map(r => `
         <tr data-id="${r.complaint_id}">
           <td class="mono">${r.complaint_id || "-"}</td>
@@ -758,6 +966,7 @@
           <td>${r.location || "-"}</td>
           <td>${r.category || "-"}</td>
           <td>${priorityBadge(r.priority)}</td>
+          <td><select class="admin-status-select" data-id="${r.complaint_id}" onclick="event.stopPropagation()">${statusOpts(r.status)}</select></td>
           <td>${r.priority_boosted ? "Yes" : "No"}</td>
           <td>${urgencyBar(r.urgency_score)}</td>
         </tr>
@@ -767,7 +976,8 @@
 
     function attachRowClicks(host) {
       host.querySelectorAll("tr[data-id]").forEach(row => {
-        row.onclick = () => {
+        row.onclick = (ev) => {
+          if (ev.target.closest(".admin-status-select")) return;
           const id = row.dataset.id;
           const c = state.complaints.find(x => x.complaint_id === id);
           if (!c) return;
@@ -1028,6 +1238,45 @@
       setTimeout(() => state.map.invalidateSize(), 100);
     }
 
+    function renderAdminHeatmap() {
+      if (typeof L === "undefined" || typeof L.heatLayer !== "function") return;
+      const el = document.getElementById("adminHeatmap");
+      if (!el) return;
+      const pts = [];
+      const tallies = new Map();
+      state.complaints.forEach((c) => {
+        const coords = getComplaintCoords(c);
+        if (!coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return;
+        const key = `${coords.lat.toFixed(4)},${coords.lng.toFixed(4)}`;
+        tallies.set(key, (tallies.get(key) || 0) + 1);
+      });
+      tallies.forEach((count, key) => {
+        const [la, ln] = key.split(",").map(Number);
+        pts.push([la, ln, Math.min(1, count / 4)]);
+      });
+      if (!state.heatMap) {
+        state.heatMap = L.map("adminHeatmap").setView([17.385, 78.4867], 11);
+        L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+          maxZoom: 20,
+          subdomains: "abcd",
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        }).addTo(state.heatMap);
+      }
+      if (state.heatLayer) {
+        state.heatMap.removeLayer(state.heatLayer);
+        state.heatLayer = null;
+      }
+      if (pts.length) {
+        state.heatLayer = L.heatLayer(pts, { radius: 30, blur: 20, maxZoom: 14 });
+        state.heatLayer.addTo(state.heatMap);
+        const bounds = L.latLngBounds(pts.map(p => [p[0], p[1]]));
+        state.heatMap.fitBounds(bounds.pad(0.12));
+      } else {
+        state.heatMap.setView([17.385, 78.4867], 11);
+      }
+      setTimeout(() => state.heatMap?.invalidateSize(), 120);
+    }
+
     async function loadHydCenters() {
       try {
         const response = await fetch(`${BACKEND}/api/hyd-locations`);
@@ -1043,8 +1292,11 @@
       const cats = [...new Set(state.complaints.map(c => c.category).filter(Boolean))];
       document.getElementById("categoryFilter").innerHTML = `<option value="">All Categories</option>${cats.map(c => `<option>${c}</option>`).join("")}`;
       const localities = [...new Set(state.complaints.map(c => c.locality).filter(Boolean))];
+      const locOpts = localities.map(l => `<option value="${String(l).toLowerCase()}">${l}</option>`).join("");
       const localityEl = document.getElementById("dashboardLocalityFilter");
-      localityEl.innerHTML = `<option value="">All Localities</option>${localities.map(l => `<option value="${String(l).toLowerCase()}">${l}</option>`).join("")}`;
+      localityEl.innerHTML = `<option value="">All Localities</option>${locOpts}`;
+      const adminLoc = document.getElementById("adminLocalityFilter");
+      if (adminLoc) adminLoc.innerHTML = `<option value="">All Localities</option>${locOpts}`;
     }
 
     function renderAll() {
@@ -1055,64 +1307,275 @@
       hydrateFilters();
       renderAllComplaints();
       renderMap();
+      renderAdminHeatmap();
       document.getElementById("liveStamp").textContent = `Last sync ${new Date().toLocaleTimeString()}`;
+    }
+
+    function exportAdminCsv() {
+      const rows = applyFilters(state.complaints);
+      const cols = ["complaint_id", "description", "location", "locality", "category", "priority", "status", "user_id", "user_name", "reported_at", "upvote_count"];
+      const esc = (v) => {
+        const s = String(v ?? "").replace(/"/g, '""');
+        return `"${s}"`;
+      };
+      const lines = [cols.join(",")];
+      rows.forEach((r) => lines.push(cols.map((c) => esc(r[c])).join(",")));
+      const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `complaints_export_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast("CSV exported.");
+    }
+
+    function userRoute() {
+      const hash = location.hash || "#user-submit";
+      const targetHash = /^#user-/.test(hash) ? hash : "#user-submit";
+      document.querySelectorAll(".user-section").forEach(s => s.classList.remove("active"));
+      document.querySelector(targetHash)?.classList.add("active");
+      document.querySelectorAll("[data-user-nav]").forEach(a => {
+        a.classList.toggle("active", a.getAttribute("href") === targetHash);
+      });
+      document.getElementById("userSidebar")?.classList.remove("open");
+    }
+
+    function renderUserMyComplaints() {
+      const host = document.getElementById("userMyComplaintsWrap");
+      if (!host) return;
+      const rows = [...userState.myComplaints].sort((a, b) => String(b.reported_at || "").localeCompare(String(a.reported_at || "")));
+      if (!rows.length) {
+        host.innerHTML = `<div class="empty">You have not submitted any complaints yet.</div>`;
+        return;
+      }
+      host.innerHTML = `<table><thead><tr><th>ID</th><th>Description</th><th>Category</th><th>Priority</th><th>Status</th><th>Reported</th></tr></thead><tbody>
+        ${rows.map((r) => `<tr><td class="mono">${r.complaint_id || "-"}</td><td>${(r.description || "").slice(0, 60)}</td><td>${r.category || "-"}</td><td>${priorityBadge(r.priority)}</td><td>${r.status || "Pending"}</td><td class="mono">${(r.reported_at || "").slice(0, 16)}</td></tr>`).join("")}
+      </tbody></table>`;
+      const sel = document.getElementById("userLocalitySelect");
+      if (sel) {
+        const locs = [...new Set(rows.map(r => r.locality).filter(Boolean))];
+        const cur = sel.value;
+        sel.innerHTML = `<option value="">Select locality</option>${locs.map(l => `<option value="${String(l).toLowerCase()}">${l}</option>`).join("")}`;
+        if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+      }
+    }
+
+    function renderUserLocalComplaints() {
+      const host = document.getElementById("userLocalComplaintsWrap");
+      if (!host) return;
+      const uid = auth.currentUser?.uid;
+      const loc = userState.locality;
+      if (!loc) {
+        host.innerHTML = `<div class="empty">Choose a locality to see reports you can upvote.</div>`;
+        return;
+      }
+      const rows = userState.localComplaints.filter(c => c.user_id !== uid);
+      if (!rows.length) {
+        host.innerHTML = `<div class="empty">No other reports in this locality.</div>`;
+        return;
+      }
+      host.innerHTML = `<table><thead><tr><th>ID</th><th>Description</th><th>Category</th><th>Priority</th><th>Status</th><th>Votes</th><th></th></tr></thead><tbody>
+        ${rows.map((r) => {
+          const voted = Array.isArray(r.upvoted_by) && r.upvoted_by.includes(uid);
+          return `<tr><td class="mono">${r.complaint_id}</td><td>${(r.description || "").slice(0, 50)}</td><td>${r.category || "-"}</td><td>${priorityBadge(r.priority)}</td><td>${r.status || "Pending"}</td><td>${r.upvote_count || 0}</td><td>${voted ? "<span style=\"color:var(--muted)\">Upvoted</span>" : `<button type="button" class="btn secondary btn-upvote" data-cid="${r.complaint_id}">Upvote</button>`}</td></tr>`;
+        }).join("")}
+      </tbody></table>`;
+      host.querySelectorAll(".btn-upvote").forEach((btn) => {
+        btn.onclick = () => { void userUpvote(btn.dataset.cid); };
+      });
+    }
+
+    async function userUpvote(complaintId) {
+      try {
+        const token = await auth.currentUser.getIdToken();
+        const res = await fetch(`${BACKEND}/api/complaints/${complaintId}/upvote`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast(data.error === "already upvoted" ? "You already upvoted this." : "Upvote failed.");
+          return;
+        }
+        toast("Upvoted.");
+      } catch {
+        toast("Upvote failed.");
+      }
+    }
+
+    function renderUserNotifications() {
+      const host = document.getElementById("userNotificationsWrap");
+      if (!host) return;
+      if (!userNotifications.length) {
+        host.innerHTML = `<div class="empty">No status updates yet.</div>`;
+        return;
+      }
+      host.innerHTML = userNotifications.slice(0, 50).map((n) => `
+        <div class="notif-item">${escapeHtml(n.message)}<time>${new Date(n.at).toLocaleString()}</time></div>
+      `).join("");
+    }
+
+    function attachLocalityListener(user) {
+      const sel = document.getElementById("userLocalitySelect");
+      if (!sel || sel.dataset.wired) return;
+      sel.dataset.wired = "1";
+      sel.addEventListener("change", () => {
+        userState.locality = sel.value;
+        unsubLocalComplaints?.();
+        unsubLocalComplaints = null;
+        if (!userState.locality) {
+          userState.localComplaints = [];
+          renderUserLocalComplaints();
+          return;
+        }
+        unsubLocalComplaints = onSnapshot(
+          query(collection(fdb, "complaints"), where("locality", "==", userState.locality)),
+          (snap) => {
+            userState.localComplaints = snap.docs.map(d => d.data());
+            renderUserLocalComplaints();
+          },
+          () => toast("Could not load local issues."),
+        );
+      });
+    }
+
+    function mountUserFirestore(user, profile) {
+      currentProfile = profile;
+      const welcome = document.getElementById("userWelcome");
+      if (welcome) welcome.textContent = profile?.name || user.email || "Citizen";
+      const locSel = document.getElementById("userLocalitySelect");
+      if (locSel) delete locSel.dataset.wired;
+      userNotifications = [];
+      userStatusPrev.clear();
+      unsubUserMyComplaints?.();
+      unsubLocalComplaints?.();
+      unsubLocalComplaints = null;
+      unsubUserMyComplaints = onSnapshot(
+        query(collection(fdb, "complaints"), where("user_id", "==", user.uid)),
+        (snap) => {
+          snap.docChanges().forEach((ch) => {
+            const d = ch.doc.data();
+            const id = ch.doc.id;
+            if (ch.type === "added") {
+              userStatusPrev.set(id, d.status);
+              return;
+            }
+            if (ch.type === "modified") {
+              const prev = userStatusPrev.get(id);
+              userStatusPrev.set(id, d.status);
+              if (prev !== undefined && prev !== d.status) {
+                userNotifications.unshift({
+                  message: `Complaint ${d.complaint_id || id} status changed from ${prev} to ${d.status}.`,
+                  at: Date.now(),
+                });
+              }
+            }
+          });
+          snap.docs.forEach((d) => {
+            if (!userStatusPrev.has(d.id)) userStatusPrev.set(d.id, d.data().status);
+          });
+          userState.myComplaints = snap.docs.map(d => d.data());
+          renderUserMyComplaints();
+          renderUserNotifications();
+          attachLocalityListener(user);
+        },
+        () => toast("Could not load your complaints."),
+      );
+      renderUserMyComplaints();
+      renderUserNotifications();
+      userRoute();
+    }
+
+    function mountAdminFirestore() {
+      unsubAdminComplaints?.();
+      unsubAdminComplaints = onSnapshot(collection(fdb, "complaints"), (snap) => {
+        state.complaints = snap.docs.map(d => d.data()).sort((a, b) => String(b.reported_at || "").localeCompare(String(a.reported_at || "")));
+        renderAll();
+      }, () => {
+        toast("Live sync failed; fetching backend data.");
+        void getIdTokenOrEmpty().then((t) => {
+          const h = {};
+          if (t) h.Authorization = `Bearer ${t}`;
+          fetch(`${BACKEND}/api/complaints`, { headers: h }).then(r => r.json()).then((data) => {
+            state.complaints = Array.isArray(data) ? data : [];
+            renderAll();
+          }).catch(() => toast("Backend fetch failed."));
+        });
+      });
+    }
+
+    function showAuthOnly() {
+      document.getElementById("authScreen").classList.remove("hidden");
+      document.getElementById("adminShell").classList.add("hidden");
+      document.getElementById("userShell").classList.add("hidden");
+    }
+
+    function showAdminShell() {
+      document.getElementById("authScreen").classList.add("hidden");
+      document.getElementById("adminShell").classList.remove("hidden");
+      document.getElementById("userShell").classList.add("hidden");
+      document.getElementById("chatWidgetRoot").classList.add("hidden");
+    }
+
+    function showUserShell() {
+      document.getElementById("authScreen").classList.add("hidden");
+      document.getElementById("adminShell").classList.add("hidden");
+      document.getElementById("userShell").classList.remove("hidden");
+      document.getElementById("chatWidgetRoot").classList.remove("hidden");
     }
 
     function route() {
       const hash = location.hash || "#dashboard";
-      document.querySelectorAll(".section").forEach(s => s.classList.remove("active"));
-      document.querySelector(hash)?.classList.add("active");
-      document.querySelectorAll(".nav a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === hash));
+      document.querySelectorAll("#adminShell .section").forEach(s => s.classList.remove("active"));
+      document.querySelector(`#adminShell ${hash}`)?.classList.add("active");
+      document.querySelectorAll("#adminShell .nav a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === hash));
       document.getElementById("sidebar").classList.remove("open");
       if (hash === "#map" && state.map) setTimeout(() => state.map.invalidateSize(), 100);
+      if (hash === "#heatmap" && state.heatMap) setTimeout(() => state.heatMap.invalidateSize(), 100);
     }
 
-    async function submitComplaint() {
-      const description = document.getElementById("descInput").value.trim();
-      const location = document.getElementById("locationInput").value.trim();
-      const reporter = document.getElementById("reporterInput").value.trim();
+    async function userSubmitComplaint() {
+      const description = document.getElementById("userDescInput").value.trim();
+      const location = document.getElementById("userLocationInput").value.trim();
       if (!description || !location) {
         toast("Description and location are required.");
         return;
       }
-      const host = document.getElementById("submitResult");
+      const host = document.getElementById("userSubmitResult");
       host.innerHTML = `<div class="card loading">AI is analysing...</div>`;
       try {
-        const ticket = await postComplaintToBackend(description, location, reporter);
-        await setDoc(doc(fdb, "complaints", ticket.complaint_id), ticket);
+        const ticket = await postComplaintToBackend(description, location, "");
+        const merged = mergeTicketWithAuthUser(ticket);
+        await setDoc(doc(fdb, "complaints", merged.complaint_id), merged);
         host.innerHTML = `
           <div class="card">
             <h3 style="margin-top:0;">Complaint Submitted</h3>
-            ${ticket.priority_boosted ? `<div class="warn-banner">${ticket.boost_reason}</div>` : ""}
-            ${ticket.location_flagged ? `<div class="warn-banner">Location flagged: ${ticket.flag_reason || "Potential issue detected."}</div>` : ""}
-            ${buildPatternAlertHtml(getPatternAnalysis(ticket))}
+            ${merged.priority_boosted ? `<div class="warn-banner">${merged.boost_reason}</div>` : ""}
+            ${merged.location_flagged ? `<div class="warn-banner">Location flagged: ${merged.flag_reason || "Potential issue detected."}</div>` : ""}
+            ${buildPatternAlertHtml(getPatternAnalysis(merged))}
             <div class="row">
-              <div><strong>Category</strong><div>${ticket.category}</div></div>
-              <div><strong>Priority</strong><div>${priorityBadge(ticket.priority)}</div></div>
-              <div><strong>Urgency Score</strong><div class="mono">${ticket.urgency_score}</div></div>
-              <div><strong>Department</strong><div>${ticket.department}</div></div>
-              <div><strong>Similar Count</strong><div class="mono">${ticket.similar_count || 0}</div></div>
-              <div><strong>Boost Reason</strong><div>${ticket.boost_reason || "-"}</div></div>
-              <div><strong>Pattern Analysis</strong><div>${getPatternAnalysis(ticket) ? "Completed" : "Not available"}</div></div>
+              <div><strong>Category</strong><div>${merged.category}</div></div>
+              <div><strong>Priority</strong><div>${priorityBadge(merged.priority)}</div></div>
+              <div><strong>Status</strong><div>${merged.status || "Pending"}</div></div>
+              <div><strong>Department</strong><div>${merged.department}</div></div>
             </div>
             <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
-              <button class="btn secondary" id="viewAllBtn">View All Complaints</button>
-              <button class="btn" id="submitAnotherBtn">Submit Another</button>
+              <button class="btn secondary" id="userViewMyBtn">My Complaints</button>
+              <button class="btn" id="userSubmitAnotherBtn">Submit Another</button>
             </div>
           </div>`;
-        document.getElementById("viewAllBtn").onclick = () => { location.hash = "#complaints"; };
-        document.getElementById("submitAnotherBtn").onclick = () => {
-          document.getElementById("descInput").value = "";
-          document.getElementById("locationInput").value = "";
-          document.getElementById("reporterInput").value = "";
+        document.getElementById("userViewMyBtn").onclick = () => { location.hash = "#user-my"; userRoute(); };
+        document.getElementById("userSubmitAnotherBtn").onclick = () => {
+          document.getElementById("userDescInput").value = "";
+          document.getElementById("userLocationInput").value = "";
           host.innerHTML = "";
         };
         toast("Complaint submitted successfully.");
       } catch (err) {
         if (err.message === "INVALID_COMPLAINT") {
           const reason = err.reason || "This doesn't seem like a valid civic complaint. Please describe a real issue.";
-          host.innerHTML = `<div class="card"><div class="warn-banner" id="submitInvalidBanner"></div></div>`;
-          document.getElementById("submitInvalidBanner").textContent = reason;
+          host.innerHTML = `<div class="card"><div class="warn-banner" id="userSubmitInvalidBanner"></div></div>`;
+          document.getElementById("userSubmitInvalidBanner").textContent = reason;
           toast("Complaint rejected as invalid.");
           return;
         }
@@ -1135,17 +1598,129 @@
       }
     });
 
-    await loadHydCenters();
+    document.getElementById("authTabLogin").onclick = () => {
+      document.getElementById("authTabLogin").classList.add("active");
+      document.getElementById("authTabSignup").classList.remove("active");
+      document.getElementById("loginForm").classList.remove("hidden");
+      document.getElementById("signupForm").classList.add("hidden");
+      showAuthErr("");
+    };
+    document.getElementById("authTabSignup").onclick = () => {
+      document.getElementById("authTabSignup").classList.add("active");
+      document.getElementById("authTabLogin").classList.remove("active");
+      document.getElementById("signupForm").classList.remove("hidden");
+      document.getElementById("loginForm").classList.add("hidden");
+      showAuthErr("");
+    };
 
-    onSnapshot(collection(fdb, "complaints"), (snap) => {
-      state.complaints = snap.docs.map(d => d.data()).sort((a, b) => String(b.reported_at || "").localeCompare(String(a.reported_at || "")));
-      renderAll();
-    }, () => {
-      toast("Live sync failed; fetching backend data.");
-      fetch(`${BACKEND}/api/complaints`).then(r => r.json()).then(data => {
-        state.complaints = data;
-        renderAll();
-      }).catch(() => toast("Backend fetch failed."));
+    function showAuthErr(msg) {
+      const el = document.getElementById("authError");
+      if (!msg) {
+        el.classList.add("hidden");
+        el.textContent = "";
+        return;
+      }
+      el.textContent = msg;
+      el.classList.remove("hidden");
+    }
+
+    document.getElementById("loginForm").onsubmit = async (e) => {
+      e.preventDefault();
+      showAuthErr("");
+      try {
+        const email = document.getElementById("loginEmail").value.trim();
+        const password = document.getElementById("loginPassword").value;
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (err) {
+        showAuthErr(err.message || "Login failed.");
+      }
+    };
+
+    document.getElementById("signupForm").onsubmit = async (e) => {
+      e.preventDefault();
+      showAuthErr("");
+      try {
+        const name = document.getElementById("signupName").value.trim();
+        const email = document.getElementById("signupEmail").value.trim();
+        const password = document.getElementById("signupPassword").value;
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        await setDoc(doc(fdb, "users", cred.user.uid), {
+          name,
+          email,
+          role: "user",
+          created_at: serverTimestamp(),
+        });
+      } catch (err) {
+        showAuthErr(err.message || "Sign up failed.");
+      }
+    };
+
+    document.getElementById("adminLogoutBtn").onclick = () => { void signOut(auth); };
+    document.getElementById("userLogoutBtn").onclick = () => { void signOut(auth); };
+    document.getElementById("userMenuBtn").onclick = () => document.getElementById("userSidebar").classList.toggle("open");
+    document.getElementById("userThemeToggle").onclick = () => {
+      document.body.classList.toggle("light");
+      localStorage.setItem("theme", document.body.classList.contains("light") ? "light" : "dark");
+    };
+    document.getElementById("adminExportCsv").onclick = exportAdminCsv;
+
+    document.getElementById("allTableWrap").addEventListener("change", async (e) => {
+      const sel = e.target.closest(".admin-status-select");
+      if (!sel) return;
+      const id = sel.dataset.id;
+      const status = sel.value;
+      try {
+        const token = await auth.currentUser.getIdToken();
+        const res = await fetch(`${BACKEND}/api/complaints/${id}/status`, {
+          method: "PATCH",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ status }),
+        });
+        if (!res.ok) throw new Error("fail");
+        toast("Status updated.");
+      } catch {
+        toast("Could not update status.");
+      }
+    });
+
+    document.getElementById("userSubmitBtn").onclick = () => { void userSubmitComplaint(); };
+
+    document.querySelectorAll("[data-user-nav]").forEach((a) => {
+      a.addEventListener("click", () => { setTimeout(userRoute, 0); });
+    });
+
+    onAuthStateChanged(auth, async (user) => {
+      unsubAdminComplaints?.();
+      unsubAdminComplaints = null;
+      unsubUserMyComplaints?.();
+      unsubUserMyComplaints = null;
+      unsubLocalComplaints?.();
+      unsubLocalComplaints = null;
+      if (!user) {
+        currentProfile = null;
+        showAuthOnly();
+        return;
+      }
+      const snap = await getDoc(doc(fdb, "users", user.uid));
+      const profile = snap.exists
+        ? snap.data()
+        : { name: user.displayName || user.email || "", email: user.email || "", role: "user" };
+      const role = profile.role === "admin" ? "admin" : "user";
+      await loadHydCenters();
+      if (role === "admin") {
+        showAdminShell();
+        if (!/^#(dashboard|complaints|map|heatmap)/.test(location.hash)) {
+          location.hash = "#dashboard";
+        }
+        route();
+        mountAdminFirestore();
+      } else {
+        showUserShell();
+        if (!/^#user-/.test(location.hash)) {
+          location.hash = "#user-submit";
+        }
+        mountUserFirestore(user, profile);
+      }
     });
 
     document.getElementById("themeToggle").onclick = () => {
@@ -1158,10 +1733,11 @@
     document.getElementById("modalBackdrop").onclick = (e) => {
       if (e.target.id === "modalBackdrop") document.getElementById("modalBackdrop").style.display = "none";
     };
-    document.getElementById("submitBtn").onclick = submitComplaint;
-    ["searchInput", "categoryFilter", "priorityFilter", "boostFilter"].forEach(id => {
-      document.getElementById(id).addEventListener("input", renderAllComplaints);
-      document.getElementById(id).addEventListener("change", renderAllComplaints);
+    ["searchInput", "categoryFilter", "priorityFilter", "boostFilter", "adminDateFrom", "adminDateTo", "adminLocalityFilter"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener("input", renderAllComplaints);
+      el.addEventListener("change", renderAllComplaints);
     });
     document.getElementById("dashboardLocalityFilter").addEventListener("change", (e) => {
       state.dashboardLocality = e.target.value;
@@ -1170,8 +1746,13 @@
       renderDashboardCharts();
       renderRecentTable();
     });
-    window.addEventListener("hashchange", route);
-    route();
+    window.addEventListener("hashchange", () => {
+      if (document.getElementById("userShell") && !document.getElementById("userShell").classList.contains("hidden")) {
+        userRoute();
+      } else {
+        route();
+      }
+    });
   </script>
 </body>
 </html>
